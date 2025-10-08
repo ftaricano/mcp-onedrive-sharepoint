@@ -1,0 +1,35 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+!.env.template
+
+# Dependencies
+node_modules/
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test
+coverage/
+.nyc_output/
+
+# Tokens and credentials
+tokens.json
+credentials.json
+.outlook-mcp-tokens.json
