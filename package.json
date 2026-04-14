@@ -11,6 +11,7 @@
     "setup-auth": "tsx src/auth/setup-auth.ts",
     "test": "npm run build && node --test build/tests/**/*.test.js",
     "lint": "eslint . --ext .ts",
+    "ci": "npm run build && npm run lint && npm test",
     "format": "prettier --write \"src/**/*.ts\" README.md .env.example"
   },
   "keywords": ["mcp", "onedrive", "sharepoint", "microsoft-graph"],

@@ -27,7 +27,7 @@ export const discoverSites: Tool = {
       },
       includePersonalSite: {
         type: 'boolean',
-        description: 'Include personal OneDrive site in results',
+        description: 'Also include the tenant root SharePoint site (`/sites/root`) when available',
         default: false
       },
       pageToken: {

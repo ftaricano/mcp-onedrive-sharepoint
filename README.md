@@ -6,6 +6,7 @@ This repository now has working onboarding and quality commands on a clean clone
 - `npm run build`
 - `npm run lint`
 - `npm test`
+- `npm run ci`
 - `npm run setup-auth`
 
 ## What is implemented
@@ -83,10 +84,18 @@ The script:
 npm run build
 npm run lint
 npm test
+npm run ci
 npm start
 ```
 
+`npm run ci` is the local verification entrypoint and is also what GitHub Actions runs on every PR/push.
+
 ## MCP behavior notes
+
+### Root site inclusion
+
+`discover_sites.includePersonalSite=true` currently attempts to append the tenant root SharePoint site (`/sites/root`) when it is available to the authenticated user.
+It does not discover or synthesize a personal OneDrive site.
 
 ### Pagination
 
