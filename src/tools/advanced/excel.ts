@@ -5,8 +5,8 @@
 
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { getGraphClient } from '../../graph/client.js';
+import { jsonTextResponse, toolErrorResponse } from '../../graph/contracts.js';
 import { DriveItem, WorkbookSession } from '../../graph/models.js';
-import { createUserFriendlyError } from '../../graph/error-handler.js';
 
 // Tool 1: Excel workbook operations
 export const excelOperations: Tool = {
@@ -145,23 +145,18 @@ export async function handleExcelOperations(args: any) {
           if (response.success && response.data) {
             const rangeData = response.data;
             
-            return {
-              content: [{
-                type: 'text',
-                text: JSON.stringify({
-                  operation: 'read_range',
-                  worksheet,
-                  range,
-                  address: rangeData.address,
-                  rowCount: rangeData.rowCount,
-                  columnCount: rangeData.columnCount,
-                  values: rangeData.values,
-                  formulas: rangeData.formulas,
-                  text: rangeData.text,
-                  numberFormat: rangeData.numberFormat
-                }, null, 2)
-              }]
-            };
+            return jsonTextResponse({
+              operation: 'read_range',
+              worksheet,
+              range,
+              address: rangeData.address,
+              rowCount: rangeData.rowCount,
+              columnCount: rangeData.columnCount,
+              values: rangeData.values,
+              formulas: rangeData.formulas,
+              text: rangeData.text,
+              numberFormat: rangeData.numberFormat
+            });
           }
           break;
         }
@@ -175,20 +170,15 @@ export async function handleExcelOperations(args: any) {
           const response = await client.patch<any>(endpoint, { values }, { headers });
 
           if (response.success && response.data) {
-            return {
-              content: [{
-                type: 'text',
-                text: JSON.stringify({
-                  operation: 'write_range',
-                  success: true,
-                  worksheet,
-                  range,
-                  rowsWritten: values.length,
-                  columnsWritten: values[0]?.length || 0,
-                  address: response.data.address
-                }, null, 2)
-              }]
-            };
+            return jsonTextResponse({
+              operation: 'write_range',
+              success: true,
+              worksheet,
+              range,
+              rowsWritten: values.length,
+              columnsWritten: values[0]?.length || 0,
+              address: response.data.address
+            });
           }
           break;
         }
@@ -202,21 +192,16 @@ export async function handleExcelOperations(args: any) {
           const response = await client.post<any>(endpoint, { name: worksheet }, { headers });
 
           if (response.success && response.data) {
-            return {
-              content: [{
-                type: 'text',
-                text: JSON.stringify({
-                  operation: 'add_worksheet',
-                  success: true,
-                  worksheet: {
-                    id: response.data.id,
-                    name: response.data.name,
-                    position: response.data.position,
-                    visibility: response.data.visibility
-                  }
-                }, null, 2)
-              }]
-            };
+            return jsonTextResponse({
+              operation: 'add_worksheet',
+              success: true,
+              worksheet: {
+                id: response.data.id,
+                name: response.data.name,
+                position: response.data.position,
+                visibility: response.data.visibility
+              }
+            });
           }
           break;
         }
@@ -228,21 +213,16 @@ export async function handleExcelOperations(args: any) {
           if (response.success && response.data) {
             const worksheets = (response.data as any).value || [];
             
-            return {
-              content: [{
-                type: 'text',
-                text: JSON.stringify({
-                  operation: 'list_worksheets',
-                  count: worksheets.length,
-                  worksheets: worksheets.map((ws: any) => ({
-                    id: ws.id,
-                    name: ws.name,
-                    position: ws.position,
-                    visibility: ws.visibility
-                  }))
-                }, null, 2)
-              }]
-            };
+            return jsonTextResponse({
+              operation: 'list_worksheets',
+              count: worksheets.length,
+              worksheets: worksheets.map((ws: any) => ({
+                id: ws.id,
+                name: ws.name,
+                position: ws.position,
+                visibility: ws.visibility
+              }))
+            });
           }
           break;
         }
@@ -258,20 +238,15 @@ export async function handleExcelOperations(args: any) {
           }, { headers });
 
           if (response.success && response.data) {
-            return {
-              content: [{
-                type: 'text',
-                text: JSON.stringify({
-                  operation: 'get_formulas',
-                  worksheet,
-                  range,
-                  address: response.data.address,
-                  rowCount: response.data.rowCount,
-                  columnCount: response.data.columnCount,
-                  formulas: response.data.formulas
-                }, null, 2)
-              }]
-            };
+            return jsonTextResponse({
+              operation: 'get_formulas',
+              worksheet,
+              range,
+              address: response.data.address,
+              rowCount: response.data.rowCount,
+              columnCount: response.data.columnCount,
+              formulas: response.data.formulas
+            });
           }
           break;
         }
@@ -285,19 +260,14 @@ export async function handleExcelOperations(args: any) {
           const response = await client.patch<any>(endpoint, { formulas }, { headers });
 
           if (response.success && response.data) {
-            return {
-              content: [{
-                type: 'text',
-                text: JSON.stringify({
-                  operation: 'set_formulas',
-                  success: true,
-                  worksheet,
-                  range,
-                  formulasSet: formulas.length * (formulas[0]?.length || 0),
-                  address: response.data.address
-                }, null, 2)
-              }]
-            };
+            return jsonTextResponse({
+              operation: 'set_formulas',
+              success: true,
+              worksheet,
+              range,
+              formulasSet: formulas.length * (formulas[0]?.length || 0),
+              address: response.data.address
+            });
           }
           break;
         }
@@ -322,22 +292,17 @@ export async function handleExcelOperations(args: any) {
               await client.patch(renameEndpoint, { name: tableName }, { headers });
             }
 
-            return {
-              content: [{
-                type: 'text',
-                text: JSON.stringify({
-                  operation: 'create_table',
-                  success: true,
-                  table: {
-                    id: table.id,
-                    name: tableName,
-                    showHeaders: table.showHeaders,
-                    showTotals: table.showTotals,
-                    style: table.style
-                  }
-                }, null, 2)
-              }]
-            };
+            return jsonTextResponse({
+              operation: 'create_table',
+              success: true,
+              table: {
+                id: table.id,
+                name: tableName,
+                showHeaders: table.showHeaders,
+                showTotals: table.showTotals,
+                style: table.style
+              }
+            });
           }
           break;
         }
@@ -357,24 +322,19 @@ export async function handleExcelOperations(args: any) {
           if (response.success && response.data) {
             const chart = response.data;
             
-            return {
-              content: [{
-                type: 'text',
-                text: JSON.stringify({
-                  operation: 'create_chart',
-                  success: true,
-                  chart: {
-                    id: chart.id,
-                    name: chart.name,
-                    type: chartType,
-                    height: chart.height,
-                    width: chart.width,
-                    top: chart.top,
-                    left: chart.left
-                  }
-                }, null, 2)
-              }]
-            };
+            return jsonTextResponse({
+              operation: 'create_chart',
+              success: true,
+              chart: {
+                id: chart.id,
+                name: chart.name,
+                type: chartType,
+                height: chart.height,
+                width: chart.width,
+                top: chart.top,
+                left: chart.left
+              }
+            });
           }
           break;
         }
@@ -395,13 +355,7 @@ export async function handleExcelOperations(args: any) {
       }
     }
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error in Excel operation: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('excel_operations', error);
   }
 }
 
@@ -528,19 +482,14 @@ export async function handleExcelAnalysis(args: any) {
             }
           }
 
-          return {
-            content: [{
-              type: 'text',
-              text: JSON.stringify({
-                analysisType: 'statistics',
-                worksheet,
-                range: data.address,
-                rowCount: data.rowCount,
-                columnCount: data.columnCount,
-                statistics: stats
-              }, null, 2)
-            }]
-          };
+          return jsonTextResponse({
+            analysisType: 'statistics',
+            worksheet,
+            range: data.address,
+            rowCount: data.rowCount,
+            columnCount: data.columnCount,
+            statistics: stats
+          });
         }
         break;
       }
@@ -564,17 +513,12 @@ export async function handleExcelAnalysis(args: any) {
             };
           }));
 
-          return {
-            content: [{
-              type: 'text',
-              text: JSON.stringify({
-                analysisType: 'pivot_summary',
-                worksheet,
-                pivotTableCount: pivotTables.length,
-                pivotTables: summaries
-              }, null, 2)
-            }]
-          };
+          return jsonTextResponse({
+            analysisType: 'pivot_summary',
+            worksheet,
+            pivotTableCount: pivotTables.length,
+            pivotTables: summaries
+          });
         }
         break;
       }
@@ -590,25 +534,20 @@ export async function handleExcelAnalysis(args: any) {
         if (validationResponse.success && validationResponse.data) {
           const validation = validationResponse.data;
           
-          return {
-            content: [{
-              type: 'text',
-              text: JSON.stringify({
-                analysisType: 'data_validation',
-                worksheet,
-                range: range || 'usedRange',
-                validation: {
-                  errorAlert: validation.errorAlert,
-                  errorMessage: validation.errorMessage,
-                  errorTitle: validation.errorTitle,
-                  operator: validation.operator,
-                  type: validation.type,
-                  formula1: validation.formula1,
-                  formula2: validation.formula2
-                }
-              }, null, 2)
-            }]
-          };
+          return jsonTextResponse({
+            analysisType: 'data_validation',
+            worksheet,
+            range: range || 'usedRange',
+            validation: {
+              errorAlert: validation.errorAlert,
+              errorMessage: validation.errorMessage,
+              errorTitle: validation.errorTitle,
+              operator: validation.operator,
+              type: validation.type,
+              formula1: validation.formula1,
+              formula2: validation.formula2
+            }
+          });
         }
         break;
       }
@@ -621,22 +560,17 @@ export async function handleExcelAnalysis(args: any) {
         if (namedRangesResponse.success && namedRangesResponse.data) {
           const namedRanges = (namedRangesResponse.data as any).value || [];
           
-          return {
-            content: [{
-              type: 'text',
-              text: JSON.stringify({
-                analysisType: 'named_ranges',
-                count: namedRanges.length,
-                namedRanges: namedRanges.map((nr: any) => ({
-                  name: nr.name,
-                  type: nr.type,
-                  value: nr.value,
-                  visible: nr.visible,
-                  scope: nr.scope
-                }))
-              }, null, 2)
-            }]
-          };
+          return jsonTextResponse({
+            analysisType: 'named_ranges',
+            count: namedRanges.length,
+            namedRanges: namedRanges.map((nr: any) => ({
+              name: nr.name,
+              type: nr.type,
+              value: nr.value,
+              visible: nr.visible,
+              scope: nr.scope
+            }))
+          });
         }
         break;
       }
@@ -678,27 +612,22 @@ export async function handleExcelAnalysis(args: any) {
             }
           }
 
-          return {
-            content: [{
-              type: 'text',
-              text: JSON.stringify({
-                analysisType: 'used_range',
-                worksheet,
-                usedRange: {
-                  address: usedRange.address,
-                  rowCount: usedRange.rowCount,
-                  columnCount: usedRange.columnCount,
-                  totalCells: usedRange.rowCount * usedRange.columnCount,
-                  cellTypes: {
-                    empty: emptyCells,
-                    numbers: numberCells,
-                    text: textCells,
-                    formulas: formulaCells
-                  }
-                }
-              }, null, 2)
-            }]
-          };
+          return jsonTextResponse({
+            analysisType: 'used_range',
+            worksheet,
+            usedRange: {
+              address: usedRange.address,
+              rowCount: usedRange.rowCount,
+              columnCount: usedRange.columnCount,
+              totalCells: usedRange.rowCount * usedRange.columnCount,
+              cellTypes: {
+                empty: emptyCells,
+                numbers: numberCells,
+                text: textCells,
+                formulas: formulaCells
+              }
+            }
+          });
         }
         break;
       }
@@ -709,13 +638,7 @@ export async function handleExcelAnalysis(args: any) {
 
     throw new Error(`Failed to perform analysis: ${analysisType}`);
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error in Excel analysis: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('excel_analysis', error);
   }
 }
 

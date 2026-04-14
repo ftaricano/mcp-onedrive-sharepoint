@@ -5,6 +5,7 @@
 
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { getGraphClient } from '../../graph/client.js';
+import { jsonTextResponse, toolErrorResponse } from '../../graph/contracts.js';
 import { DriveItem, Drive, GraphResponse } from '../../graph/models.js';
 import { createUserFriendlyError } from '../../graph/error-handler.js';
 
@@ -366,20 +367,9 @@ export async function handleStorageAnalytics(args: any) {
       };
     }
 
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify(results, null, 2)
-      }]
-    };
+    return jsonTextResponse(results);
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error analyzing storage: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('storage_analytics', error);
   }
 }
 
@@ -474,33 +464,28 @@ export async function handleVersionManagement(args: any) {
           const currentResponse = await client.get<DriveItem>(baseEndpoint);
           const currentItem = currentResponse.data;
 
-          return {
-            content: [{
-              type: 'text',
-              text: JSON.stringify({
-                action: 'list',
-                file: {
-                  id: actualItemId,
-                  name: currentItem?.name,
-                  currentSize: currentItem?.size,
-                  webUrl: currentItem?.webUrl
-                },
-                versionCount: versions.length,
-                totalVersionSize: versions.reduce((sum: number, v: any) => 
-                  sum + (v.size || 0), 0
-                ),
-                versions: versions.map((v: any) => ({
-                  id: v.id,
-                  version: v.version,
-                  size: v.size,
-                  sizeMB: v.size ? Math.round(v.size / (1024 * 1024)) : 0,
-                  lastModifiedDateTime: v.lastModifiedDateTime,
-                  lastModifiedBy: v.lastModifiedBy?.user?.displayName,
-                  isCurrent: v.id === 'current'
-                }))
-              }, null, 2)
-            }]
-          };
+          return jsonTextResponse({
+            action: 'list',
+            file: {
+              id: actualItemId,
+              name: currentItem?.name,
+              currentSize: currentItem?.size,
+              webUrl: currentItem?.webUrl
+            },
+            versionCount: versions.length,
+            totalVersionSize: versions.reduce((sum: number, v: any) => 
+              sum + (v.size || 0), 0
+            ),
+            versions: versions.map((v: any) => ({
+              id: v.id,
+              version: v.version,
+              size: v.size,
+              sizeMB: v.size ? Math.round(v.size / (1024 * 1024)) : 0,
+              lastModifiedDateTime: v.lastModifiedDateTime,
+              lastModifiedBy: v.lastModifiedBy?.user?.displayName,
+              isCurrent: v.id === 'current'
+            }))
+          });
         }
         break;
       }
@@ -514,18 +499,13 @@ export async function handleVersionManagement(args: any) {
         const response = await client.post(restoreEndpoint, {});
 
         if (response.success) {
-          return {
-            content: [{
-              type: 'text',
-              text: JSON.stringify({
-                action: 'restore',
-                success: true,
-                message: `Version ${versionId} restored successfully`,
-                itemId: actualItemId,
-                restoredVersion: versionId
-              }, null, 2)
-            }]
-          };
+          return jsonTextResponse({
+            action: 'restore',
+            success: true,
+            message: `Version ${versionId} restored successfully`,
+            itemId: actualItemId,
+            restoredVersion: versionId
+          });
         }
         break;
       }
@@ -539,18 +519,13 @@ export async function handleVersionManagement(args: any) {
         const response = await client.delete(deleteEndpoint);
 
         if (response.success) {
-          return {
-            content: [{
-              type: 'text',
-              text: JSON.stringify({
-                action: 'delete',
-                success: true,
-                message: `Version ${versionId} deleted successfully`,
-                itemId: actualItemId,
-                deletedVersion: versionId
-              }, null, 2)
-            }]
-          };
+          return jsonTextResponse({
+            action: 'delete',
+            success: true,
+            message: `Version ${versionId} deleted successfully`,
+            itemId: actualItemId,
+            deletedVersion: versionId
+          });
         }
         break;
       }
@@ -598,23 +573,18 @@ export async function handleVersionManagement(args: any) {
 
         const spaceSaved = deletedVersions.reduce((sum, v) => sum + (v.size || 0), 0);
 
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              action: 'cleanup',
-              success: failedDeletions.length === 0,
-              keepVersions,
-              originalVersionCount: versions.length,
-              deletedCount: deletedVersions.length,
-              remainingCount: versions.length - deletedVersions.length,
-              spaceSaved,
-              spaceSavedMB: Math.round(spaceSaved / (1024 * 1024)),
-              deletedVersions,
-              failedDeletions
-            }, null, 2)
-          }]
-        };
+        return jsonTextResponse({
+          action: 'cleanup',
+          success: failedDeletions.length === 0,
+          keepVersions,
+          originalVersionCount: versions.length,
+          deletedCount: deletedVersions.length,
+          remainingCount: versions.length - deletedVersions.length,
+          spaceSaved,
+          spaceSavedMB: Math.round(spaceSaved / (1024 * 1024)),
+          deletedVersions,
+          failedDeletions
+        });
       }
 
       case 'compare': {
@@ -635,41 +605,36 @@ export async function handleVersionManagement(args: any) {
         const version1 = version1Response.data;
         const version2 = version2Response.data;
 
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              action: 'compare',
-              itemId: actualItemId,
-              comparison: {
-                version1: {
-                  id: version1.id,
-                  version: version1.version,
-                  size: version1.size,
-                  lastModified: version1.lastModifiedDateTime,
-                  lastModifiedBy: version1.lastModifiedBy?.user?.displayName
-                },
-                version2: {
-                  id: version2.id,
-                  version: version2.version,
-                  size: version2.size,
-                  lastModified: version2.lastModifiedDateTime,
-                  lastModifiedBy: version2.lastModifiedBy?.user?.displayName
-                },
-                differences: {
-                  sizeDifference: (version2.size || 0) - (version1.size || 0),
-                  timeDifference: new Date(version2.lastModifiedDateTime).getTime() - 
-                                 new Date(version1.lastModifiedDateTime).getTime(),
-                  daysBetween: Math.floor(
-                    (new Date(version2.lastModifiedDateTime).getTime() - 
-                     new Date(version1.lastModifiedDateTime).getTime()) / 
-                    (24 * 60 * 60 * 1000)
-                  )
-                }
-              }
-            }, null, 2)
-          }]
-        };
+        return jsonTextResponse({
+          action: 'compare',
+          itemId: actualItemId,
+          comparison: {
+            version1: {
+              id: version1.id,
+              version: version1.version,
+              size: version1.size,
+              lastModified: version1.lastModifiedDateTime,
+              lastModifiedBy: version1.lastModifiedBy?.user?.displayName
+            },
+            version2: {
+              id: version2.id,
+              version: version2.version,
+              size: version2.size,
+              lastModified: version2.lastModifiedDateTime,
+              lastModifiedBy: version2.lastModifiedBy?.user?.displayName
+            },
+            differences: {
+              sizeDifference: (version2.size || 0) - (version1.size || 0),
+              timeDifference: new Date(version2.lastModifiedDateTime).getTime() - 
+                             new Date(version1.lastModifiedDateTime).getTime(),
+              daysBetween: Math.floor(
+                (new Date(version2.lastModifiedDateTime).getTime() - 
+                 new Date(version1.lastModifiedDateTime).getTime()) / 
+                (24 * 60 * 60 * 1000)
+              )
+            }
+          }
+        });
       }
 
       default:
@@ -678,13 +643,7 @@ export async function handleVersionManagement(args: any) {
 
     throw new Error(`Failed to ${action} versions`);
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error managing versions: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('version_management', error);
   }
 }
 
