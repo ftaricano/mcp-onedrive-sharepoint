@@ -6,7 +6,7 @@
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { getGraphClient } from '../../graph/client.js';
 import { Site, List, ListItem, ListColumn, ContentType, GraphResponse } from '../../graph/models.js';
-import { ENDPOINTS, buildUrl } from '../../config/endpoints.js';
+import { extractPaginatedResult, jsonTextResponse, toolErrorResponse } from '../../graph/contracts.js';
 import { createUserFriendlyError } from '../../graph/error-handler.js';
 
 // Tool 1: Discover SharePoint sites
@@ -29,6 +29,10 @@ export const discoverSites: Tool = {
         type: 'boolean',
         description: 'Include personal OneDrive site in results',
         default: false
+      },
+      pageToken: {
+        type: 'string',
+        description: 'Opaque pagination token from a previous response (Graph nextLink)'
       }
     }
   }
@@ -37,77 +41,66 @@ export const discoverSites: Tool = {
 export async function handleDiscoverSites(args: any) {
   try {
     const client = getGraphClient();
-    const { search, limit = 50, includePersonalSite = false } = args;
+    const { search, limit = 50, includePersonalSite = false, pageToken } = args;
 
-    let sites: Site[] = [];
+    let response;
 
-    // Get sites from search if search term provided
-    if (search) {
-      const searchEndpoint = `/sites?search=${encodeURIComponent(search)}`;
-      const searchResponse = await client.get<GraphResponse<Site>>(searchEndpoint, {
+    if (pageToken) {
+      response = await client.get<GraphResponse<Site>>(pageToken);
+    } else if (search) {
+      response = await client.get<GraphResponse<Site>>('/sites', {
+        search,
         '$top': limit.toString()
       });
-      
-      if (searchResponse.success && searchResponse.data) {
-        sites = (searchResponse.data as any).value || [];
-      }
     } else {
-      // Get all sites user has access to
-      const sitesEndpoint = '/sites?filter=siteCollection/root%20ne%20null';
-      const sitesResponse = await client.get<GraphResponse<Site>>(sitesEndpoint, {
+      response = await client.get<GraphResponse<Site>>('/sites', {
+        '$filter': 'siteCollection/root ne null',
         '$top': limit.toString(),
         '$orderby': 'displayName'
       });
-      
-      if (sitesResponse.success && sitesResponse.data) {
-        sites = (sitesResponse.data as any).value || [];
-      }
     }
 
-    // Include personal site if requested
-    if (includePersonalSite) {
+    if (!response.success || !response.data) {
+      throw new Error('Failed to retrieve sites');
+    }
+
+    const { items: sites, pagination } = extractPaginatedResult(response.data, limit);
+
+    if (includePersonalSite && !pageToken) {
       try {
-        const personalResponse = await client.get<Site>('/me/drive/root/webUrl');
-        if (personalResponse.success && personalResponse.data) {
-          // Get personal site details
-          const personalSiteResponse = await client.get<Site>('/sites/root');
-          if (personalSiteResponse.success && personalSiteResponse.data) {
+        const personalSiteResponse = await client.get<Site>('/sites/root');
+        if (personalSiteResponse.success && personalSiteResponse.data) {
+          const alreadyIncluded = sites.some((site) => site.id === personalSiteResponse.data?.id);
+          if (!alreadyIncluded) {
             sites.unshift(personalSiteResponse.data);
           }
         }
-      } catch (error) {
+      } catch {
         // Personal site access may not be available, continue without it
       }
     }
 
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          search: search || 'all sites',
-          siteCount: sites.length,
-          includePersonalSite,
-          sites: sites.map((site: Site) => ({
-            id: site.id,
-            name: site.name || site.displayName,
-            displayName: site.displayName,
-            description: site.description,
-            webUrl: site.webUrl,
-            createdDateTime: site.createdDateTime,
-            lastModifiedDateTime: site.lastModifiedDateTime,
-            isRoot: !!site.root
-          }))
-        }, null, 2)
-      }]
-    };
+    return jsonTextResponse({
+      search: search || 'all sites',
+      siteCount: sites.length,
+      includePersonalSite,
+      pagination: {
+        ...pagination,
+        returned: sites.length
+      },
+      sites: sites.map((site: Site) => ({
+        id: site.id,
+        name: site.name || site.displayName,
+        displayName: site.displayName,
+        description: site.description,
+        webUrl: site.webUrl,
+        createdDateTime: site.createdDateTime,
+        lastModifiedDateTime: site.lastModifiedDateTime,
+        isRoot: !!site.root
+      }))
+    });
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error discovering sites: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('discover_sites', error);
   }
 }
 
@@ -136,6 +129,10 @@ export const listSiteLists: Tool = {
         type: 'number',
         description: 'Maximum number of lists to return',
         default: 100
+      },
+      pageToken: {
+        type: 'string',
+        description: 'Opaque pagination token from a previous response (Graph nextLink)'
       }
     },
     required: ['siteId']
@@ -145,16 +142,15 @@ export const listSiteLists: Tool = {
 export async function handleListSiteLists(args: any) {
   try {
     const client = getGraphClient();
-    const { siteId, includeHidden = false, includeSystemLists = false, limit = 100 } = args;
+    const { siteId, includeHidden = false, includeSystemLists = false, limit = 100, pageToken } = args;
 
-    const endpoint = `/sites/${siteId}/lists`;
+    const endpoint = pageToken || `/sites/${siteId}/lists`;
     const params: any = {
       '$top': limit.toString(),
       '$expand': 'columns,contentTypes',
       '$orderby': 'displayName'
     };
 
-    // Add filters if needed
     const filters: string[] = [];
     if (!includeHidden) {
       filters.push('list/hidden eq false');
@@ -166,47 +162,37 @@ export async function handleListSiteLists(args: any) {
       params['$filter'] = filters.join(' and ');
     }
 
-    const response = await client.get<GraphResponse<List>>(endpoint, params);
+    const response = await client.get<GraphResponse<List>>(endpoint, pageToken ? undefined : params);
 
     if (response.success && response.data) {
-      const lists = (response.data as any).value || [];
+      const { items: lists, pagination } = extractPaginatedResult(response.data, limit);
       
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            siteId,
-            listCount: lists.length,
-            includeHidden,
-            includeSystemLists,
-            lists: lists.map((list: List) => ({
-              id: list.id,
-              name: list.name,
-              displayName: list.displayName,
-              description: list.description,
-              webUrl: list.webUrl,
-              template: list.list?.template,
-              hidden: list.list?.hidden,
-              contentTypesEnabled: list.list?.contentTypesEnabled,
-              columnCount: list.columns?.length || 0,
-              contentTypeCount: list.contentTypes?.length || 0,
-              createdDateTime: list.createdDateTime,
-              lastModifiedDateTime: list.lastModifiedDateTime
-            }))
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        siteId,
+        listCount: lists.length,
+        includeHidden,
+        includeSystemLists,
+        pagination,
+        lists: lists.map((list: List) => ({
+          id: list.id,
+          name: list.name,
+          displayName: list.displayName,
+          description: list.description,
+          webUrl: list.webUrl,
+          template: list.list?.template,
+          hidden: list.list?.hidden,
+          contentTypesEnabled: list.list?.contentTypesEnabled,
+          columnCount: list.columns?.length || 0,
+          contentTypeCount: list.contentTypes?.length || 0,
+          createdDateTime: list.createdDateTime,
+          lastModifiedDateTime: list.lastModifiedDateTime
+        }))
+      });
     }
 
     throw new Error('Failed to retrieve lists');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error listing site lists: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('list_site_lists', error);
   }
 }
 
@@ -344,6 +330,10 @@ export const listItems: Tool = {
         type: 'number',
         description: 'Maximum number of items to return',
         default: 100
+      },
+      pageToken: {
+        type: 'string',
+        description: 'Opaque pagination token from a previous response (Graph nextLink)'
       }
     },
     required: ['siteId', 'listId']
@@ -353,9 +343,9 @@ export const listItems: Tool = {
 export async function handleListItems(args: any) {
   try {
     const client = getGraphClient();
-    const { siteId, listId, filter, orderBy = 'Created desc', select, expand, limit = 100 } = args;
+    const { siteId, listId, filter, orderBy = 'Created desc', select, expand, limit = 100, pageToken } = args;
 
-    const endpoint = `/sites/${siteId}/lists/${listId}/items`;
+    const endpoint = pageToken || `/sites/${siteId}/lists/${listId}/items`;
     const params: any = {
       '$top': limit.toString(),
       '$expand': 'fields',
@@ -374,44 +364,34 @@ export async function handleListItems(args: any) {
       params['$expand'] += `,fields(${expand})`;
     }
 
-    const response = await client.get<GraphResponse<ListItem>>(endpoint, params);
+    const response = await client.get<GraphResponse<ListItem>>(endpoint, pageToken ? undefined : params);
 
     if (response.success && response.data) {
-      const items = (response.data as any).value || [];
+      const { items, pagination } = extractPaginatedResult(response.data, limit);
       
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            siteId,
-            listId,
-            filter: filter || 'none',
-            orderBy,
-            itemCount: items.length,
-            items: items.map((item: ListItem) => ({
-              id: item.id,
-              webUrl: item.webUrl,
-              createdDateTime: item.createdDateTime,
-              lastModifiedDateTime: item.lastModifiedDateTime,
-              createdBy: item.createdBy?.user?.displayName,
-              lastModifiedBy: item.lastModifiedBy?.user?.displayName,
-              contentType: item.contentType?.name,
-              fields: item.fields
-            }))
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        siteId,
+        listId,
+        filter: filter || 'none',
+        orderBy,
+        itemCount: items.length,
+        pagination,
+        items: items.map((item: ListItem) => ({
+          id: item.id,
+          webUrl: item.webUrl,
+          createdDateTime: item.createdDateTime,
+          lastModifiedDateTime: item.lastModifiedDateTime,
+          createdBy: item.createdBy?.user?.displayName,
+          lastModifiedBy: item.lastModifiedBy?.user?.displayName,
+          contentType: item.contentType?.name,
+          fields: item.fields
+        }))
+      });
     }
 
     throw new Error('Failed to retrieve list items');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error listing items: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('list_items', error);
   }
 }
 

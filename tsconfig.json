@@ -25,9 +25,7 @@
   ],
   "exclude": [
     "node_modules",
-    "build",
-    "**/*.test.ts",
-    "**/*.spec.ts"
+    "build"
   ],
   "ts-node": {
     "esm": true,
