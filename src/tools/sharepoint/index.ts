@@ -7,7 +7,6 @@ import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { getGraphClient } from '../../graph/client.js';
 import { Site, List, ListItem, ListColumn, ContentType, GraphResponse } from '../../graph/models.js';
 import { extractPaginatedResult, jsonTextResponse, toolErrorResponse } from '../../graph/contracts.js';
-import { createUserFriendlyError } from '../../graph/error-handler.js';
 
 // Tool 1: Discover SharePoint sites
 export const discoverSites: Tool = {
@@ -64,7 +63,8 @@ export async function handleDiscoverSites(args: any) {
       throw new Error('Failed to retrieve sites');
     }
 
-    const { items: sites, pagination } = extractPaginatedResult(response.data, limit);
+    const { items, pagination } = extractPaginatedResult<Site>(response.data, limit);
+    const sites: Site[] = [...items];
 
     if (includePersonalSite && !pageToken) {
       try {
@@ -240,57 +240,46 @@ export async function handleGetListSchema(args: any) {
     if (response.success && response.data) {
       const list = response.data;
       
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            list: {
-              id: list.id,
-              name: list.name,
-              displayName: list.displayName,
-              description: list.description,
-              webUrl: list.webUrl,
-              template: list.list?.template,
-              hidden: list.list?.hidden,
-              contentTypesEnabled: list.list?.contentTypesEnabled
-            },
-            columns: list.columns?.map((column: ListColumn) => ({
-              id: column.id,
-              name: column.name,
-              displayName: column.displayName,
-              description: column.description,
-              type: column.type,
-              required: column.required,
-              hidden: column.hidden,
-              indexed: column.indexed,
-              textSettings: column.text,
-              numberSettings: column.number,
-              choiceSettings: column.choice,
-              lookupSettings: column.lookup
-            })) || [],
-            contentTypes: includeContentTypes ? (list.contentTypes?.map((ct: ContentType) => ({
-              id: ct.id,
-              name: ct.name,
-              description: ct.description,
-              group: ct.group,
-              hidden: ct.hidden,
-              readOnly: ct.readOnly,
-              sealed: ct.sealed
-            })) || []) : undefined
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        list: {
+          id: list.id,
+          name: list.name,
+          displayName: list.displayName,
+          description: list.description,
+          webUrl: list.webUrl,
+          template: list.list?.template,
+          hidden: list.list?.hidden,
+          contentTypesEnabled: list.list?.contentTypesEnabled
+        },
+        columns: list.columns?.map((column: ListColumn) => ({
+          id: column.id,
+          name: column.name,
+          displayName: column.displayName,
+          description: column.description,
+          type: column.type,
+          required: column.required,
+          hidden: column.hidden,
+          indexed: column.indexed,
+          textSettings: column.text,
+          numberSettings: column.number,
+          choiceSettings: column.choice,
+          lookupSettings: column.lookup
+        })) || [],
+        contentTypes: includeContentTypes ? (list.contentTypes?.map((ct: ContentType) => ({
+          id: ct.id,
+          name: ct.name,
+          description: ct.description,
+          group: ct.group,
+          hidden: ct.hidden,
+          readOnly: ct.readOnly,
+          sealed: ct.sealed
+        })) || []) : undefined
+      });
     }
 
     throw new Error('Failed to get list schema');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error getting list schema: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('get_list_schema', error);
   }
 }
 
@@ -442,34 +431,23 @@ export async function handleGetListItem(args: any) {
     if (response.success && response.data) {
       const item = response.data;
       
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            id: item.id,
-            webUrl: item.webUrl,
-            createdDateTime: item.createdDateTime,
-            lastModifiedDateTime: item.lastModifiedDateTime,
-            createdBy: item.createdBy?.user?.displayName,
-            lastModifiedBy: item.lastModifiedBy?.user?.displayName,
-            contentType: item.contentType?.name,
-            parentReference: item.parentReference,
-            sharepointIds: item.sharepointIds,
-            fields: item.fields
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        id: item.id,
+        webUrl: item.webUrl,
+        createdDateTime: item.createdDateTime,
+        lastModifiedDateTime: item.lastModifiedDateTime,
+        createdBy: item.createdBy?.user?.displayName,
+        lastModifiedBy: item.lastModifiedBy?.user?.displayName,
+        contentType: item.contentType?.name,
+        parentReference: item.parentReference,
+        sharepointIds: item.sharepointIds,
+        fields: item.fields
+      });
     }
 
     throw new Error('Failed to get list item');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error getting list item: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('get_list_item', error);
   }
 }
 
@@ -521,33 +499,22 @@ export async function handleCreateListItem(args: any) {
     if (response.success && response.data) {
       const item = response.data;
       
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: 'List item created successfully',
-            item: {
-              id: item.id,
-              webUrl: item.webUrl,
-              createdDateTime: item.createdDateTime,
-              contentType: item.contentType?.name,
-              fields: item.fields
-            }
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        success: true,
+        message: 'List item created successfully',
+        item: {
+          id: item.id,
+          webUrl: item.webUrl,
+          createdDateTime: item.createdDateTime,
+          contentType: item.contentType?.name,
+          fields: item.fields
+        }
+      });
     }
 
     throw new Error('Failed to create list item');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error creating list item: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('create_list_item', error);
   }
 }
 
@@ -590,29 +557,18 @@ export async function handleUpdateListItem(args: any) {
     const response = await client.patch<any>(endpoint, fields);
 
     if (response.success && response.data) {
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: 'List item updated successfully',
-            itemId,
-            updatedFields: fields,
-            result: response.data
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        success: true,
+        message: 'List item updated successfully',
+        itemId,
+        updatedFields: fields,
+        result: response.data
+      });
     }
 
     throw new Error('Failed to update list item');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error updating list item: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('update_list_item', error);
   }
 }
 
@@ -650,29 +606,18 @@ export async function handleDeleteListItem(args: any) {
     const response = await client.delete(endpoint);
 
     if (response.success) {
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: 'List item deleted successfully',
-            itemId,
-            siteId,
-            listId
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        success: true,
+        message: 'List item deleted successfully',
+        itemId,
+        siteId,
+        listId
+      });
     }
 
     throw new Error('Failed to delete list item');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error deleting list item: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('delete_list_item', error);
   }
 }
 

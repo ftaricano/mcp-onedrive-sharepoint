@@ -5,7 +5,7 @@
 
 import { PublicClientApplication, AuthenticationResult, DeviceCodeRequest } from '@azure/msal-node';
 import * as keytar from 'keytar';
-import { DEFAULT_SCOPES } from '../config/scopes';
+import { DEFAULT_SCOPES } from '../config/scopes.js';
 
 export interface AuthConfig {
   clientId: string;
@@ -235,4 +235,8 @@ export function getAuthInstance(): MicrosoftGraphAuth {
     throw new Error('Authentication not initialized. Call initializeAuth() first.');
   }
   return authInstance;
+}
+
+export function __setAuthInstanceForTests(auth: MicrosoftGraphAuth | null): void {
+  authInstance = auth;
 }

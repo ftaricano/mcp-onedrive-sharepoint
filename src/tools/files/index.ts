@@ -6,8 +6,7 @@
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { getGraphClient } from '../../graph/client.js';
 import { DriveItem, Permission, UploadSession, GraphResponse } from '../../graph/models.js';
-import { extractPaginatedResult, jsonTextResponse, toolErrorResponse } from '../../graph/contracts.js';
-import { createUserFriendlyError } from '../../graph/error-handler.js';
+import { extractPaginatedResult, jsonTextErrorResponse, jsonTextResponse, toolErrorResponse } from '../../graph/contracts.js';
 import {
   buildDriveChildrenEndpoint,
   buildDriveItemEndpoint,
@@ -217,19 +216,13 @@ export async function handleUploadFile(args: any) {
     const pathPrep = await prepareUploadPath(remotePath, siteId);
     
     if (!pathPrep.success) {
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: false,
-            error: 'Path preparation failed',
-            details: pathPrep.error,
-            originalPath: remotePath,
-            changes: pathPrep.changes
-          }, null, 2)
-        }],
-        isError: true
-      };
+      return jsonTextErrorResponse({
+        success: false,
+        error: 'Path preparation failed',
+        details: pathPrep.error,
+        originalPath: remotePath,
+        changes: pathPrep.changes
+      });
     }
 
     // Use the sanitized path for upload
@@ -249,36 +242,25 @@ export async function handleUploadFile(args: any) {
     if (response.success && response.data) {
       const item = response.data as DriveItem;
       
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: 'File uploaded successfully',
-            pathChanges: pathPrep.changes,
-            originalPath: pathPrep.originalPath,
-            finalPath: pathPrep.sanitizedPath,
-            file: {
-              id: item.id,
-              name: item.name,
-              size: item.size,
-              webUrl: item.webUrl,
-              lastModified: item.lastModifiedDateTime
-            }
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        success: true,
+        message: 'File uploaded successfully',
+        pathChanges: pathPrep.changes,
+        originalPath: pathPrep.originalPath,
+        finalPath: pathPrep.sanitizedPath,
+        file: {
+          id: item.id,
+          name: item.name,
+          size: item.size,
+          webUrl: item.webUrl,
+          lastModified: item.lastModifiedDateTime
+        }
+      });
     }
 
     throw new Error('Failed to upload file');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error uploading file: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('upload_file', error);
   }
 }
 
@@ -334,32 +316,21 @@ export async function handleCreateFolder(args: any) {
     if (response.success && response.data) {
       const folder = response.data;
       
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: 'Folder created successfully',
-            folder: {
-              id: folder.id,
-              name: folder.name,
-              webUrl: folder.webUrl,
-              path: folder.parentReference.path + '/' + folder.name
-            }
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        success: true,
+        message: 'Folder created successfully',
+        folder: {
+          id: folder.id,
+          name: folder.name,
+          webUrl: folder.webUrl,
+          path: folder.parentReference.path + '/' + folder.name
+        }
+      });
     }
 
     throw new Error('Failed to create folder');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error creating folder: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('create_folder', error);
   }
 }
 
@@ -429,32 +400,21 @@ export async function handleMoveItem(args: any) {
     if (response.success && response.data) {
       const item = response.data;
       
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: 'Item moved/renamed successfully',
-            item: {
-              id: item.id,
-              name: item.name,
-              webUrl: item.webUrl,
-              path: item.parentReference.path + '/' + item.name
-            }
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        success: true,
+        message: 'Item moved/renamed successfully',
+        item: {
+          id: item.id,
+          name: item.name,
+          webUrl: item.webUrl,
+          path: item.parentReference.path + '/' + item.name
+        }
+      });
     }
 
     throw new Error('Failed to move/rename item');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error moving/renaming item: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('move_item', error);
   }
 }
 
@@ -506,30 +466,19 @@ export async function handleDeleteItem(args: any) {
     const response = await client.delete(endpoint);
 
     if (response.success) {
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: permanent 
-              ? 'Item permanently deleted' 
-              : 'Item moved to recycle bin',
-            itemId: itemId || 'path-based',
-            itemPath: itemPath || 'id-based'
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        success: true,
+        message: permanent 
+          ? 'Item permanently deleted' 
+          : 'Item moved to recycle bin',
+        itemId: itemId || 'path-based',
+        itemPath: itemPath || 'id-based'
+      });
     }
 
     throw new Error('Failed to delete item');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error deleting item: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('delete_item', error);
   }
 }
 
@@ -704,23 +653,12 @@ export async function handleGetFileMetadata(args: any) {
         }
       }
 
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify(metadata, null, 2)
-        }]
-      };
+      return jsonTextResponse(metadata);
     }
 
     throw new Error('Failed to get metadata');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error getting metadata: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('get_file_metadata', error);
   }
 }
 
@@ -810,34 +748,23 @@ export async function handleShareItem(args: any) {
     if (response.success && response.data) {
       const permission = response.data;
       
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: 'Sharing link created successfully',
-            link: {
-              id: permission.id,
-              url: permission.link?.webUrl,
-              type: permission.link?.type,
-              scope: permission.link?.scope,
-              expirationDateTime: permission.expirationDateTime,
-              hasPassword: permission.hasPassword
-            }
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        success: true,
+        message: 'Sharing link created successfully',
+        link: {
+          id: permission.id,
+          url: permission.link?.webUrl,
+          type: permission.link?.type,
+          scope: permission.link?.scope,
+          expirationDateTime: permission.expirationDateTime,
+          hasPassword: permission.hasPassword
+        }
+      });
     }
 
     throw new Error('Failed to create sharing link');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error creating sharing link: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('share_item', error);
   }
 }
 
@@ -934,32 +861,21 @@ export async function handleCopyItem(args: any) {
     const response = await client.post(endpoint, copyData);
 
     if (response.success) {
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: 'Item copy initiated successfully',
-            note: 'Copy operation is asynchronous and may take some time to complete',
-            itemId: itemId || 'path-based',
-            itemPath: itemPath || 'id-based',
-            destinationFolderId,
-            destinationFolderPath,
-            newName
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        success: true,
+        message: 'Item copy initiated successfully',
+        note: 'Copy operation is asynchronous and may take some time to complete',
+        itemId: itemId || 'path-based',
+        itemPath: itemPath || 'id-based',
+        destinationFolderId,
+        destinationFolderPath,
+        newName
+      });
     }
 
     throw new Error('Failed to copy item');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error copying item: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('copy_item', error);
   }
 }
 

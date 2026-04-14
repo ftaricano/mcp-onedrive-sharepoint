@@ -42,6 +42,16 @@ export function jsonTextResponse(payload: unknown): { content: Array<{ type: 'te
   };
 }
 
+export function jsonTextErrorResponse(payload: unknown): {
+  content: Array<{ type: 'text'; text: string }>;
+  isError: true;
+} {
+  return {
+    ...jsonTextResponse(payload),
+    isError: true
+  };
+}
+
 export function toolErrorResponse(toolName: string, error: unknown, context?: string): {
   content: Array<{ type: 'text'; text: string }>;
   isError: true;
