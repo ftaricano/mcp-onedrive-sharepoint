@@ -9,7 +9,7 @@
     "dev": "tsx src/index.ts",
     "start": "node build/index.js",
     "setup-auth": "tsx src/auth/setup-auth.ts",
-    "test": "npm run build && node --test build/tests/*.test.js",
+    "test": "npm run build && node --test --test-force-exit build/tests/*.test.js",
     "lint": "eslint . --ext .ts",
     "ci": "npm run build && npm run lint && npm test",
     "format": "prettier --write \"src/**/*.ts\" README.md .env.example"
