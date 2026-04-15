@@ -3,79 +3,100 @@
  * Optimized for batch operations and large file handling
  */
 
-import { Tool } from '@modelcontextprotocol/sdk/types.js';
-import { getGraphClient } from '../../graph/client.js';
-import { jsonTextResponse, toolErrorResponse } from '../../graph/contracts.js';
-import { DriveItem, UploadSession } from '../../graph/models.js';
-import { createUserFriendlyError } from '../../graph/error-handler.js';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as crypto from 'crypto';
+import { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { getGraphClient } from "../../graph/client.js";
+import { jsonTextResponse, toolErrorResponse } from "../../graph/contracts.js";
+import { DriveItem, UploadSession } from "../../graph/models.js";
+import { createUserFriendlyError } from "../../graph/error-handler.js";
+import { getDriveRootEndpoint } from "../../graph/resource-resolver.js";
+import { resolveDriveTargetContext } from "../../sharepoint/site-resolver.js";
+import * as fs from "fs";
+import * as path from "path";
+import * as crypto from "crypto";
 
 // Tool 1: Sync folder (bidirectional)
 export const syncFolder: Tool = {
-  name: 'sync_folder',
-  description: 'Synchronize a local folder with OneDrive/SharePoint (bidirectional)',
+  name: "sync_folder",
+  description:
+    "Synchronize a local folder with OneDrive/SharePoint (bidirectional)",
   inputSchema: {
-    type: 'object',
+    type: "object",
     properties: {
       localPath: {
-        type: 'string',
-        description: 'Local folder path to sync'
+        type: "string",
+        description: "Local folder path to sync",
       },
       remotePath: {
-        type: 'string',
-        description: 'Remote folder path in OneDrive/SharePoint'
+        type: "string",
+        description: "Remote folder path in OneDrive/SharePoint",
       },
       siteId: {
-        type: 'string',
-        description: 'SharePoint site ID (optional)'
+        type: "string",
+        description: "SharePoint site ID (optional)",
+      },
+      site: {
+        type: "string",
+        description: "Known SharePoint site alias or canonical URL",
+      },
+      siteUrl: {
+        type: "string",
+        description:
+          "Canonical SharePoint site URL (optional alternative to siteId)",
+      },
+      driveId: {
+        type: "string",
+        description: "Drive ID for a specific document library (optional)",
       },
       direction: {
-        type: 'string',
-        enum: ['upload', 'download', 'bidirectional'],
-        description: 'Sync direction',
-        default: 'bidirectional'
+        type: "string",
+        enum: ["upload", "download", "bidirectional"],
+        description: "Sync direction",
+        default: "bidirectional",
       },
       conflictResolution: {
-        type: 'string',
-        enum: ['local', 'remote', 'newer', 'rename'],
-        description: 'How to resolve conflicts',
-        default: 'newer'
+        type: "string",
+        enum: ["local", "remote", "newer", "rename"],
+        description: "How to resolve conflicts",
+        default: "newer",
       },
       includePatterns: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'File patterns to include (e.g., ["*.docx", "*.xlsx"])'
+        type: "array",
+        items: { type: "string" },
+        description: 'File patterns to include (e.g., ["*.docx", "*.xlsx"])',
       },
       excludePatterns: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'File patterns to exclude (e.g., ["*.tmp", "~*"])'
+        type: "array",
+        items: { type: "string" },
+        description: 'File patterns to exclude (e.g., ["*.tmp", "~*"])',
       },
       deleteOrphans: {
-        type: 'boolean',
-        description: 'Delete files that exist only on one side',
-        default: false
-      }
+        type: "boolean",
+        description: "Delete files that exist only on one side",
+        default: false,
+      },
     },
-    required: ['localPath', 'remotePath']
-  }
+    required: ["localPath", "remotePath"],
+  },
 };
 
 export async function handleSyncFolder(args: any) {
   try {
     const client = getGraphClient();
-    const { 
-      localPath, 
-      remotePath, 
-      siteId,
-      direction = 'bidirectional',
-      conflictResolution = 'newer',
+    const {
+      localPath,
+      remotePath,
+      direction = "bidirectional",
+      conflictResolution = "newer",
       includePatterns = [],
       excludePatterns = [],
-      deleteOrphans = false
+      deleteOrphans = false,
     } = args;
+    const { siteId, driveId } = await resolveDriveTargetContext(
+      { site: args.site, siteId: args.siteId, siteUrl: args.siteUrl, driveId: args.driveId },
+      client,
+    );
+
+    const driveRoot = getDriveRootEndpoint({ siteId, driveId });
 
     const syncResults = {
       uploaded: [] as any[],
@@ -83,12 +104,12 @@ export async function handleSyncFolder(args: any) {
       skipped: [] as any[],
       conflicts: [] as any[],
       errors: [] as any[],
-      deleted: [] as any[]
+      deleted: [] as any[],
     };
 
     // Validate local path
     if (!fs.existsSync(localPath)) {
-      if (direction === 'upload') {
+      if (direction === "upload") {
         throw new Error(`Local path does not exist: ${localPath}`);
       } else {
         // Create local directory for download
@@ -97,49 +118,64 @@ export async function handleSyncFolder(args: any) {
     }
 
     // Get remote folder contents
-    const remoteEndpoint = siteId
-      ? `/sites/${siteId}/drive/root:/${remotePath}:/children`
-      : `/me/drive/root:/${remotePath}:/children`;
+    const remoteEndpoint = `${driveRoot}/root:/${remotePath}:/children`;
 
     const remoteResponse = await client.get<any>(remoteEndpoint, {
-      '$select': 'id,name,size,lastModifiedDateTime,file,folder',
-      '$top': '1000'
+      $select: "id,name,size,lastModifiedDateTime,file,folder",
+      $top: "1000",
     });
 
-    const remoteItems = remoteResponse.success && remoteResponse.data 
-      ? (remoteResponse.data as any).value || []
-      : [];
+    const remoteItems =
+      remoteResponse.success && remoteResponse.data
+        ? (remoteResponse.data as any).value || []
+        : [];
 
     // Get local folder contents
     const localItems = fs.readdirSync(localPath, { withFileTypes: true });
 
     // Create maps for comparison
-    const remoteMap = new Map(remoteItems.map((item: any) => [item.name, item]));
-    const localMap = new Map(localItems.map(item => [item.name, item]));
+    const remoteMap = new Map(
+      remoteItems.map((item: any) => [item.name, item]),
+    );
+    const localMap = new Map(localItems.map((item) => [item.name, item]));
 
     // Helper function to check file patterns
     const matchesPattern = (filename: string, patterns: string[]): boolean => {
       if (patterns.length === 0) return true;
-      return patterns.some(pattern => {
-        const regex = new RegExp(pattern.replace(/\*/g, '.*').replace(/\?/g, '.'));
+      return patterns.some((pattern) => {
+        const regex = new RegExp(
+          pattern.replace(/\*/g, ".*").replace(/\?/g, "."),
+        );
         return regex.test(filename);
       });
     };
 
     // Process uploads (local → remote)
-    if (direction === 'upload' || direction === 'bidirectional') {
+    if (direction === "upload" || direction === "bidirectional") {
       for (const localItem of localItems) {
         if (localItem.isDirectory()) continue; // Skip directories for now
 
         const filename = localItem.name;
-        
+
         // Check patterns
-        if (includePatterns.length > 0 && !matchesPattern(filename, includePatterns)) {
-          syncResults.skipped.push({ name: filename, reason: 'Not in include pattern' });
+        if (
+          includePatterns.length > 0 &&
+          !matchesPattern(filename, includePatterns)
+        ) {
+          syncResults.skipped.push({
+            name: filename,
+            reason: "Not in include pattern",
+          });
           continue;
         }
-        if (excludePatterns.length > 0 && matchesPattern(filename, excludePatterns)) {
-          syncResults.skipped.push({ name: filename, reason: 'In exclude pattern' });
+        if (
+          excludePatterns.length > 0 &&
+          matchesPattern(filename, excludePatterns)
+        ) {
+          syncResults.skipped.push({
+            name: filename,
+            reason: "In exclude pattern",
+          });
           continue;
         }
 
@@ -152,20 +188,22 @@ export async function handleSyncFolder(args: any) {
         if (!remoteItem) {
           shouldUpload = true;
         } else if ((remoteItem as any).file) {
-          const remoteModified = new Date((remoteItem as any).lastModifiedDateTime);
+          const remoteModified = new Date(
+            (remoteItem as any).lastModifiedDateTime,
+          );
           const localModified = localStats.mtime;
 
           switch (conflictResolution) {
-            case 'local':
+            case "local":
               shouldUpload = true;
               break;
-            case 'remote':
+            case "remote":
               shouldUpload = false;
               break;
-            case 'newer':
+            case "newer":
               shouldUpload = localModified > remoteModified;
               break;
-            case 'rename':
+            case "rename":
               // Upload with new name
               const baseName = path.basename(filename, path.extname(filename));
               const ext = path.extname(filename);
@@ -173,8 +211,8 @@ export async function handleSyncFolder(args: any) {
               // Upload logic with new name would go here
               syncResults.conflicts.push({
                 name: filename,
-                resolution: 'renamed',
-                newName
+                resolution: "renamed",
+                newName,
               });
               continue;
           }
@@ -182,29 +220,27 @@ export async function handleSyncFolder(args: any) {
 
         if (shouldUpload) {
           try {
-            const uploadEndpoint = siteId
-              ? `/sites/${siteId}/drive/root:/${remotePath}/${filename}:/content`
-              : `/me/drive/root:/${remotePath}/${filename}:/content`;
+            const uploadEndpoint = `${driveRoot}/root:/${remotePath}/${filename}:/content`;
 
             const uploadResponse = await client.uploadFile(
               uploadEndpoint,
               localFilePath,
               filename,
-              { conflictBehavior: 'replace' }
+              { conflictBehavior: "replace" },
             );
 
             if (uploadResponse.success) {
               syncResults.uploaded.push({
                 name: filename,
                 size: localStats.size,
-                localPath: localFilePath
+                localPath: localFilePath,
               });
             }
           } catch (error) {
             syncResults.errors.push({
               name: filename,
               error: createUserFriendlyError(error),
-              operation: 'upload'
+              operation: "upload",
             });
           }
         }
@@ -212,19 +248,31 @@ export async function handleSyncFolder(args: any) {
     }
 
     // Process downloads (remote → local)
-    if (direction === 'download' || direction === 'bidirectional') {
+    if (direction === "download" || direction === "bidirectional") {
       for (const remoteItem of remoteItems) {
         if (!remoteItem.file) continue; // Skip folders for now
 
         const filename = remoteItem.name;
-        
+
         // Check patterns
-        if (includePatterns.length > 0 && !matchesPattern(filename, includePatterns)) {
-          syncResults.skipped.push({ name: filename, reason: 'Not in include pattern' });
+        if (
+          includePatterns.length > 0 &&
+          !matchesPattern(filename, includePatterns)
+        ) {
+          syncResults.skipped.push({
+            name: filename,
+            reason: "Not in include pattern",
+          });
           continue;
         }
-        if (excludePatterns.length > 0 && matchesPattern(filename, excludePatterns)) {
-          syncResults.skipped.push({ name: filename, reason: 'In exclude pattern' });
+        if (
+          excludePatterns.length > 0 &&
+          matchesPattern(filename, excludePatterns)
+        ) {
+          syncResults.skipped.push({
+            name: filename,
+            reason: "In exclude pattern",
+          });
           continue;
         }
 
@@ -241,16 +289,16 @@ export async function handleSyncFolder(args: any) {
           const localModified = localStats.mtime;
 
           switch (conflictResolution) {
-            case 'remote':
+            case "remote":
               shouldDownload = true;
               break;
-            case 'local':
+            case "local":
               shouldDownload = false;
               break;
-            case 'newer':
+            case "newer":
               shouldDownload = remoteModified > localModified;
               break;
-            case 'rename':
+            case "rename":
               // Download with new name
               const baseName = path.basename(filename, path.extname(filename));
               const ext = path.extname(filename);
@@ -259,8 +307,8 @@ export async function handleSyncFolder(args: any) {
               // Download logic with new name would go here
               syncResults.conflicts.push({
                 name: filename,
-                resolution: 'renamed',
-                newName
+                resolution: "renamed",
+                newName,
               });
               continue;
           }
@@ -268,15 +316,14 @@ export async function handleSyncFolder(args: any) {
 
         if (shouldDownload) {
           try {
-            const downloadEndpoint = siteId
-              ? `/sites/${siteId}/drive/items/${remoteItem.id}/content`
-              : `/me/drive/items/${remoteItem.id}/content`;
+            const downloadEndpoint = `${driveRoot}/items/${remoteItem.id}/content`;
 
-            const downloadResponse = await client.downloadFile(downloadEndpoint);
+            const downloadResponse =
+              await client.downloadFile(downloadEndpoint);
 
             if (downloadResponse.success && downloadResponse.data) {
               fs.writeFileSync(localFilePath, downloadResponse.data as Buffer);
-              
+
               // Preserve modification time
               const remoteModified = new Date(remoteItem.lastModifiedDateTime);
               fs.utimesSync(localFilePath, remoteModified, remoteModified);
@@ -284,14 +331,14 @@ export async function handleSyncFolder(args: any) {
               syncResults.downloaded.push({
                 name: filename,
                 size: remoteItem.size,
-                localPath: localFilePath
+                localPath: localFilePath,
               });
             }
           } catch (error) {
             syncResults.errors.push({
               name: filename,
               error: createUserFriendlyError(error),
-              operation: 'download'
+              operation: "download",
             });
           }
         }
@@ -301,7 +348,7 @@ export async function handleSyncFolder(args: any) {
     // Handle orphan deletion if requested
     if (deleteOrphans) {
       // Delete local orphans
-      if (direction === 'download' || direction === 'bidirectional') {
+      if (direction === "download" || direction === "bidirectional") {
         for (const localItem of localItems) {
           if (!remoteMap.has(localItem.name)) {
             const localFilePath = path.join(localPath, localItem.name);
@@ -313,13 +360,13 @@ export async function handleSyncFolder(args: any) {
               }
               syncResults.deleted.push({
                 name: localItem.name,
-                location: 'local'
+                location: "local",
               });
             } catch (error) {
               syncResults.errors.push({
                 name: localItem.name,
                 error: createUserFriendlyError(error),
-                operation: 'delete_local'
+                operation: "delete_local",
               });
             }
           }
@@ -327,25 +374,23 @@ export async function handleSyncFolder(args: any) {
       }
 
       // Delete remote orphans
-      if (direction === 'upload' || direction === 'bidirectional') {
+      if (direction === "upload" || direction === "bidirectional") {
         for (const remoteItem of remoteItems) {
           if (!localMap.has(remoteItem.name)) {
             try {
-              const deleteEndpoint = siteId
-                ? `/sites/${siteId}/drive/items/${remoteItem.id}`
-                : `/me/drive/items/${remoteItem.id}`;
+              const deleteEndpoint = `${driveRoot}/items/${remoteItem.id}`;
 
               await client.delete(deleteEndpoint);
-              
+
               syncResults.deleted.push({
                 name: remoteItem.name,
-                location: 'remote'
+                location: "remote",
               });
             } catch (error) {
               syncResults.errors.push({
                 name: remoteItem.name,
                 error: createUserFriendlyError(error),
-                operation: 'delete_remote'
+                operation: "delete_remote",
               });
             }
           }
@@ -365,89 +410,104 @@ export async function handleSyncFolder(args: any) {
         skipped: syncResults.skipped.length,
         conflicts: syncResults.conflicts.length,
         deleted: syncResults.deleted.length,
-        errors: syncResults.errors.length
+        errors: syncResults.errors.length,
       },
-      details: syncResults
+      details: syncResults,
     });
   } catch (error) {
-    return toolErrorResponse('sync_folder', error);
+    return toolErrorResponse("sync_folder", error);
   }
 }
 
 // Tool 2: Batch file operations
 export const batchFileOperations: Tool = {
-  name: 'batch_file_operations',
-  description: 'Perform multiple file operations in a single batch',
+  name: "batch_file_operations",
+  description: "Perform multiple file operations in a single batch",
   inputSchema: {
-    type: 'object',
+    type: "object",
     properties: {
       operations: {
-        type: 'array',
+        type: "array",
         items: {
-          type: 'object',
+          type: "object",
           properties: {
             operation: {
-              type: 'string',
-              enum: ['upload', 'download', 'move', 'copy', 'delete', 'rename'],
-              description: 'Operation type'
+              type: "string",
+              enum: ["upload", "download", "move", "copy", "delete", "rename"],
+              description: "Operation type",
             },
             source: {
-              type: 'string',
-              description: 'Source path (local for upload, remote for others)'
+              type: "string",
+              description: "Source path (local for upload, remote for others)",
             },
             destination: {
-              type: 'string',
-              description: 'Destination path'
+              type: "string",
+              description: "Destination path",
             },
             itemId: {
-              type: 'string',
-              description: 'Item ID (for operations on existing items)'
+              type: "string",
+              description: "Item ID (for operations on existing items)",
             },
             newName: {
-              type: 'string',
-              description: 'New name (for rename operation)'
-            }
+              type: "string",
+              description: "New name (for rename operation)",
+            },
           },
-          required: ['operation']
+          required: ["operation"],
         },
-        description: 'Array of operations to perform',
-        maxItems: 50
+        description: "Array of operations to perform",
+        maxItems: 50,
       },
       siteId: {
-        type: 'string',
-        description: 'SharePoint site ID (optional)'
+        type: "string",
+        description: "SharePoint site ID (optional)",
+      },
+      site: {
+        type: "string",
+        description: "Known SharePoint site alias or canonical URL",
+      },
+      siteUrl: {
+        type: "string",
+        description:
+          "Canonical SharePoint site URL (optional alternative to siteId)",
+      },
+      driveId: {
+        type: "string",
+        description: "Drive ID for a specific document library (optional)",
       },
       stopOnError: {
-        type: 'boolean',
-        description: 'Stop processing if an operation fails',
-        default: false
+        type: "boolean",
+        description: "Stop processing if an operation fails",
+        default: false,
       },
       parallel: {
-        type: 'boolean',
-        description: 'Execute operations in parallel (faster but may hit rate limits)',
-        default: false
-      }
+        type: "boolean",
+        description:
+          "Execute operations in parallel (faster but may hit rate limits)",
+        default: false,
+      },
     },
-    required: ['operations']
-  }
+    required: ["operations"],
+  },
 };
 
 export async function handleBatchFileOperations(args: any) {
   try {
     const client = getGraphClient();
-    const { 
-      operations, 
-      siteId,
-      stopOnError = false,
-      parallel = false
-    } = args;
+    const { operations, stopOnError = false, parallel = false } = args;
+    const { siteId, driveId } = await resolveDriveTargetContext(
+      { site: args.site, siteId: args.siteId, siteUrl: args.siteUrl, driveId: args.driveId },
+      client,
+    );
+
+    const driveRoot = getDriveRootEndpoint({ siteId, driveId });
 
     if (!operations || operations.length === 0) {
-      throw new Error('At least one operation is required');
+      throw new Error("At least one operation is required");
     }
 
     if (operations.length > 50) {
-      throw new Error('Maximum 50 operations allowed per batch');
+      throw new Error("Maximum 50 operations allowed per batch");
     }
 
     const results: any[] = [];
@@ -457,25 +517,23 @@ export async function handleBatchFileOperations(args: any) {
         index,
         operation: op.operation,
         source: op.source,
-        destination: op.destination
+        destination: op.destination,
       };
 
       try {
         switch (op.operation) {
-          case 'upload': {
+          case "upload": {
             if (!op.source || !op.destination) {
-              throw new Error('Source and destination required for upload');
+              throw new Error("Source and destination required for upload");
             }
 
-            const uploadEndpoint = siteId
-              ? `/sites/${siteId}/drive/root:/${op.destination}:/content`
-              : `/me/drive/root:/${op.destination}:/content`;
+            const uploadEndpoint = `${driveRoot}/root:/${op.destination}:/content`;
 
             const response = await client.uploadFile(
               uploadEndpoint,
               op.source,
               path.basename(op.destination),
-              { conflictBehavior: 'rename' }
+              { conflictBehavior: "rename" },
             );
 
             result.success = response.success;
@@ -485,18 +543,14 @@ export async function handleBatchFileOperations(args: any) {
             break;
           }
 
-          case 'download': {
+          case "download": {
             if (!op.source || !op.destination) {
-              throw new Error('Source and destination required for download');
+              throw new Error("Source and destination required for download");
             }
 
             const downloadEndpoint = op.itemId
-              ? (siteId 
-                  ? `/sites/${siteId}/drive/items/${op.itemId}/content`
-                  : `/me/drive/items/${op.itemId}/content`)
-              : (siteId
-                  ? `/sites/${siteId}/drive/root:/${op.source}:/content`
-                  : `/me/drive/root:/${op.source}:/content`);
+              ? `${driveRoot}/items/${op.itemId}/content`
+              : `${driveRoot}/root:/${op.source}:/content`;
 
             const response = await client.downloadFile(downloadEndpoint);
 
@@ -508,70 +562,60 @@ export async function handleBatchFileOperations(args: any) {
             break;
           }
 
-          case 'move': {
+          case "move": {
             if (!op.itemId || !op.destination) {
-              throw new Error('ItemId and destination required for move');
+              throw new Error("ItemId and destination required for move");
             }
 
-            const moveEndpoint = siteId
-              ? `/sites/${siteId}/drive/items/${op.itemId}`
-              : `/me/drive/items/${op.itemId}`;
+            const moveEndpoint = `${driveRoot}/items/${op.itemId}`;
 
             const response = await client.patch(moveEndpoint, {
-              parentReference: { path: op.destination }
+              parentReference: { path: op.destination },
             });
 
             result.success = response.success;
             break;
           }
 
-          case 'copy': {
+          case "copy": {
             if (!op.itemId || !op.destination) {
-              throw new Error('ItemId and destination required for copy');
+              throw new Error("ItemId and destination required for copy");
             }
 
-            const copyEndpoint = siteId
-              ? `/sites/${siteId}/drive/items/${op.itemId}/copy`
-              : `/me/drive/items/${op.itemId}/copy`;
+            const copyEndpoint = `${driveRoot}/items/${op.itemId}/copy`;
 
             const response = await client.post(copyEndpoint, {
               parentReference: { path: op.destination },
-              name: op.newName || undefined
+              name: op.newName || undefined,
             });
 
             result.success = response.success;
             break;
           }
 
-          case 'delete': {
+          case "delete": {
             if (!op.itemId && !op.source) {
-              throw new Error('ItemId or source required for delete');
+              throw new Error("ItemId or source required for delete");
             }
 
             const deleteEndpoint = op.itemId
-              ? (siteId
-                  ? `/sites/${siteId}/drive/items/${op.itemId}`
-                  : `/me/drive/items/${op.itemId}`)
-              : (siteId
-                  ? `/sites/${siteId}/drive/root:/${op.source}`
-                  : `/me/drive/root:/${op.source}`);
+              ? `${driveRoot}/items/${op.itemId}`
+              : `${driveRoot}/root:/${op.source}`;
 
             const response = await client.delete(deleteEndpoint);
             result.success = response.success;
             break;
           }
 
-          case 'rename': {
+          case "rename": {
             if (!op.itemId || !op.newName) {
-              throw new Error('ItemId and newName required for rename');
+              throw new Error("ItemId and newName required for rename");
             }
 
-            const renameEndpoint = siteId
-              ? `/sites/${siteId}/drive/items/${op.itemId}`
-              : `/me/drive/items/${op.itemId}`;
+            const renameEndpoint = `${driveRoot}/items/${op.itemId}`;
 
             const response = await client.patch(renameEndpoint, {
-              name: op.newName
+              name: op.newName,
             });
 
             result.success = response.success;
@@ -582,10 +626,10 @@ export async function handleBatchFileOperations(args: any) {
             throw new Error(`Unknown operation: ${op.operation}`);
         }
 
-        result.status = 'completed';
+        result.status = "completed";
       } catch (error) {
         result.success = false;
-        result.status = 'failed';
+        result.status = "failed";
         result.error = createUserFriendlyError(error);
 
         if (stopOnError) {
@@ -598,21 +642,21 @@ export async function handleBatchFileOperations(args: any) {
 
     if (parallel) {
       // Process operations in parallel
-      const promises = operations.map((op: any, index: number) => 
-        processOperation(op, index)
+      const promises = operations.map((op: any, index: number) =>
+        processOperation(op, index),
       );
       const parallelResults = await Promise.allSettled(promises);
-      
+
       parallelResults.forEach((promiseResult, index) => {
-        if (promiseResult.status === 'fulfilled') {
+        if (promiseResult.status === "fulfilled") {
           results.push(promiseResult.value);
         } else {
           results.push({
             index,
             operation: operations[index].operation,
             success: false,
-            status: 'failed',
-            error: promiseResult.reason?.message || 'Unknown error'
+            status: "failed",
+            error: promiseResult.reason?.message || "Unknown error",
           });
         }
       });
@@ -621,7 +665,7 @@ export async function handleBatchFileOperations(args: any) {
       for (let i = 0; i < operations.length; i++) {
         const result = await processOperation(operations[i], i);
         results.push(result);
-        
+
         if (!result.success && stopOnError) {
           break;
         }
@@ -630,29 +674,26 @@ export async function handleBatchFileOperations(args: any) {
 
     const summary = {
       total: results.length,
-      successful: results.filter(r => r.success).length,
-      failed: results.filter(r => !r.success).length,
+      successful: results.filter((r) => r.success).length,
+      failed: results.filter((r) => !r.success).length,
       parallel,
-      stopOnError
+      stopOnError,
     };
 
     return jsonTextResponse({
       success: summary.failed === 0,
       summary,
-      results
+      results,
     });
   } catch (error) {
-    return toolErrorResponse('batch_file_operations', error);
+    return toolErrorResponse("batch_file_operations", error);
   }
 }
 
 // Export all sync tools and handlers
-export const syncTools = [
-  syncFolder,
-  batchFileOperations
-];
+export const syncTools = [syncFolder, batchFileOperations];
 
 export const syncHandlers = {
   sync_folder: handleSyncFolder,
-  batch_file_operations: handleBatchFileOperations
+  batch_file_operations: handleBatchFileOperations,
 };
