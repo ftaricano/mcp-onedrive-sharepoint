@@ -80,15 +80,31 @@ export const ENDPOINTS = {
   }
 } as const;
 
-// Helper function to build URLs with parameters
+// Helper function to build URLs with path parameters and OData query parameters.
 export function buildUrl(endpoint: string, params: Record<string, string> = {}, useBase = true): string {
   let url = endpoint;
-  
-  // Replace path parameters
-  for (const [key, value] of Object.entries(params)) {
-    url = url.replace(`{${key}}`, encodeURIComponent(value));
+  const queryParams = new URLSearchParams();
+
+  for (const [key, rawValue] of Object.entries(params)) {
+    const value = String(rawValue);
+    const placeholder = `{${key}}`;
+
+    if (url.includes(placeholder)) {
+      url = url.split(placeholder).join(encodeURIComponent(value));
+      continue;
+    }
+
+    if (value.length === 0 || value === 'undefined' || value === 'null') {
+      continue;
+    }
+
+    queryParams.append(key, value);
   }
-  
+
+  if (queryParams.size > 0) {
+    url += `${url.includes('?') ? '&' : '?'}${queryParams.toString()}`;
+  }
+
   // Add base URL if needed
   if (useBase && !url.startsWith('http')) {
     url = GRAPH_BASE_URL + url;

@@ -3,10 +3,8 @@
  */
 
 import * as dotenv from 'dotenv';
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { DEFAULT_SCOPES } from './scopes.js';
 
-// Load environment variables
 dotenv.config();
 
 export interface AuthConfig {
@@ -28,62 +26,47 @@ export interface ServerConfig {
   };
 }
 
-const DEFAULT_SCOPES = [
-  'Files.ReadWrite.All',
-  'Sites.ReadWrite.All', 
-  'Directory.Read.All',
-  'User.Read',
-  'offline_access'
-];
-
 export function loadConfig(): ServerConfig {
   const config: ServerConfig = {
     auth: {
       clientId: process.env.MICROSOFT_GRAPH_CLIENT_ID || '',
       tenantId: process.env.MICROSOFT_GRAPH_TENANT_ID || 'common',
-      scopes: process.env.MICROSOFT_GRAPH_SCOPES?.split(',') || DEFAULT_SCOPES
+      scopes: process.env.MICROSOFT_GRAPH_SCOPES?.split(',').map((scope) => scope.trim()).filter(Boolean) || [...DEFAULT_SCOPES]
     },
     graph: {
       baseUrl: process.env.MICROSOFT_GRAPH_BASE_URL || 'https://graph.microsoft.com/v1.0',
-      timeout: parseInt(process.env.MICROSOFT_GRAPH_TIMEOUT || '30000'),
-      maxRetries: parseInt(process.env.MICROSOFT_GRAPH_MAX_RETRIES || '3')
+      timeout: parseInt(process.env.MICROSOFT_GRAPH_TIMEOUT || '30000', 10),
+      maxRetries: parseInt(process.env.MICROSOFT_GRAPH_MAX_RETRIES || '3', 10)
     },
     cache: {
       enabled: process.env.MICROSOFT_GRAPH_CACHE_ENABLED !== 'false',
-      ttl: parseInt(process.env.MICROSOFT_GRAPH_CACHE_TTL || '3600')
+      ttl: parseInt(process.env.MICROSOFT_GRAPH_CACHE_TTL || '3600', 10)
     }
   };
 
-  // Validate required configuration
-  if (!config.auth.clientId) {
-    throw new Error(
-      'Missing MICROSOFT_GRAPH_CLIENT_ID environment variable. ' +
-      'Please run the setup-auth script or set the environment variable.'
-    );
-  }
-
+  validateConfig(config);
   return config;
 }
 
 export function validateConfig(config: ServerConfig): void {
   if (!config.auth.clientId) {
-    throw new Error('Client ID is required for Microsoft Graph authentication');
+    throw new Error(
+      'Missing MICROSOFT_GRAPH_CLIENT_ID environment variable. Run npm run setup-auth or set it in your environment/.env file.'
+    );
   }
 
   if (!Array.isArray(config.auth.scopes) || config.auth.scopes.length === 0) {
-    throw new Error('At least one scope is required for Microsoft Graph authentication');
+    throw new Error('At least one Microsoft Graph scope is required');
   }
 
-  // Validate required scopes
   const requiredScopes = ['Files.ReadWrite.All', 'Sites.ReadWrite.All'];
-  const missingScopes = requiredScopes.filter(scope => !config.auth.scopes.includes(scope));
-  
+  const missingScopes = requiredScopes.filter((scope) => !config.auth.scopes.includes(scope));
+
   if (missingScopes.length > 0) {
     throw new Error(`Missing required scopes: ${missingScopes.join(', ')}`);
   }
 }
 
-// Export configuration constants
 export const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 export const DEFAULT_TIMEOUT = 30000;
 export const DEFAULT_MAX_RETRIES = 3;

@@ -4,10 +4,16 @@
  */
 
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { basename } from 'node:path';
 import { getGraphClient } from '../../graph/client.js';
 import { DriveItem, Permission, UploadSession, GraphResponse } from '../../graph/models.js';
-import { ENDPOINTS, buildUrl } from '../../config/endpoints.js';
-import { createUserFriendlyError } from '../../graph/error-handler.js';
+import { extractPaginatedResult, jsonTextResponse, toolErrorResponse, jsonTextErrorResponse } from '../../graph/contracts.js';
+import {
+  buildDriveChildrenEndpoint,
+  buildDriveItemEndpoint,
+  buildDriveSearchEndpoint,
+  describeDriveTarget
+} from '../../graph/resource-resolver.js';
 
 // Tool 1: List files and folders
 export const listFiles: Tool = {
@@ -25,6 +31,10 @@ export const listFiles: Tool = {
         type: 'string',
         description: 'SharePoint site ID (optional, if not provided uses personal OneDrive)'
       },
+      driveId: {
+        type: 'string',
+        description: 'Drive ID for a specific OneDrive or SharePoint document library'
+      },
       filter: {
         type: 'string',
         description: 'OData filter (e.g., "file ne null" for files only)',
@@ -38,6 +48,10 @@ export const listFiles: Tool = {
         type: 'number',
         description: 'Maximum number of items to return',
         default: 100
+      },
+      pageToken: {
+        type: 'string',
+        description: 'Opaque pagination token from a previous response (Graph nextLink)'
       }
     }
   }
@@ -46,24 +60,9 @@ export const listFiles: Tool = {
 export async function handleListFiles(args: any) {
   try {
     const client = getGraphClient();
-    const { path = '', siteId, filter, orderBy = 'name', limit = 100 } = args;
+    const { path = '', siteId, driveId, filter, orderBy = 'name', limit = 100, pageToken } = args;
 
-    let endpoint: string;
-    if (siteId) {
-      // SharePoint site drive
-      if (path) {
-        endpoint = `/sites/${siteId}/drive/root:/${path}:/children`;
-      } else {
-        endpoint = `/sites/${siteId}/drive/root/children`;
-      }
-    } else {
-      // Personal OneDrive
-      if (path) {
-        endpoint = `/me/drive/root:/${path}:/children`;
-      } else {
-        endpoint = `/me/drive/root/children`;
-      }
-    }
+    const endpoint = pageToken || buildDriveChildrenEndpoint({ siteId, driveId, path });
 
     const params: any = {
       '$orderby': orderBy,
@@ -74,41 +73,33 @@ export async function handleListFiles(args: any) {
       params['$filter'] = filter;
     }
 
-    const response = await client.get<GraphResponse<DriveItem>>(endpoint, params);
+    const response = await client.get<GraphResponse<DriveItem>>(endpoint, pageToken ? undefined : params);
 
     if (response.success && response.data) {
-      const items = (response.data as any).value || [];
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            path: path || '/',
-            siteId: siteId || 'personal',
-            itemCount: items.length,
-            items: items.map((item: DriveItem) => ({
-              id: item.id,
-              name: item.name,
-              size: item.size,
-              type: item.file ? 'file' : 'folder',
-              mimeType: item.file?.mimeType,
-              lastModified: item.lastModifiedDateTime,
-              webUrl: item.webUrl,
-              path: item.parentReference.path
-            }))
-          }, null, 2)
-        }]
-      };
+      const { items, pagination } = extractPaginatedResult(response.data, limit);
+
+      return jsonTextResponse({
+        target: describeDriveTarget({ siteId, driveId }),
+        path: path || '/',
+        itemCount: items.length,
+        pagination,
+        items: items.map((item: DriveItem) => ({
+          id: item.id,
+          name: item.name,
+          size: item.size,
+          type: item.file ? 'file' : 'folder',
+          mimeType: item.file?.mimeType,
+          lastModified: item.lastModifiedDateTime,
+          webUrl: item.webUrl,
+          path: item.parentReference.path,
+          driveId: item.parentReference.driveId
+        }))
+      });
     }
 
     throw new Error('Failed to retrieve files');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error listing files: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('list_files', error);
   }
 }
 
@@ -131,6 +122,10 @@ export const downloadFile: Tool = {
         type: 'string',
         description: 'SharePoint site ID (optional)'
       },
+      driveId: {
+        type: 'string',
+        description: 'Drive ID for a specific document library (optional)'
+      },
       outputPath: {
         type: 'string',
         description: 'Local path to save the file (optional)'
@@ -143,18 +138,8 @@ export const downloadFile: Tool = {
 export async function handleDownloadFile(args: any) {
   try {
     const client = getGraphClient();
-    const { fileId, filePath, siteId, outputPath } = args;
-
-    let endpoint: string;
-    if (fileId) {
-      endpoint = siteId 
-        ? `/sites/${siteId}/drive/items/${fileId}/content`
-        : `/me/drive/items/${fileId}/content`;
-    } else {
-      endpoint = siteId
-        ? `/sites/${siteId}/drive/root:/${filePath}:/content`
-        : `/me/drive/root:/${filePath}:/content`;
-    }
+    const { fileId, filePath, siteId, driveId, outputPath } = args;
+    const endpoint = buildDriveItemEndpoint({ itemId: fileId, itemPath: filePath, siteId, driveId }, '/content');
 
     const response = await client.downloadFile(endpoint);
 
@@ -165,43 +150,28 @@ export async function handleDownloadFile(args: any) {
         const fs = await import('fs');
         await fs.promises.writeFile(outputPath, buffer);
         
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              success: true,
-              message: `File downloaded successfully to ${outputPath}`,
-              size: buffer.length,
-              path: outputPath
-            }, null, 2)
-          }]
-        };
+        return jsonTextResponse({
+          success: true,
+          target: describeDriveTarget({ siteId, driveId }),
+          message: `File downloaded successfully to ${outputPath}`,
+          size: buffer.length,
+          path: outputPath
+        });
       } else {
-        // Return file info without saving
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              success: true,
-              message: 'File downloaded successfully',
-              size: buffer.length,
-              contentType: 'application/octet-stream',
-              data: `<${buffer.length} bytes of binary data>`
-            }, null, 2)
-          }]
-        };
+        return jsonTextResponse({
+          success: true,
+          target: describeDriveTarget({ siteId, driveId }),
+          message: 'File downloaded successfully',
+          size: buffer.length,
+          contentType: 'application/octet-stream',
+          data: `<${buffer.length} bytes of binary data>`
+        });
       }
     }
 
     throw new Error('Failed to download file');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error downloading file: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('download_file', error);
   }
 }
 
@@ -247,19 +217,13 @@ export async function handleUploadFile(args: any) {
     const pathPrep = await prepareUploadPath(remotePath, siteId);
     
     if (!pathPrep.success) {
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: false,
-            error: 'Path preparation failed',
-            details: pathPrep.error,
-            originalPath: remotePath,
-            changes: pathPrep.changes
-          }, null, 2)
-        }],
-        isError: true
-      };
+      return jsonTextErrorResponse({
+        success: false,
+        error: 'Path preparation failed',
+        details: pathPrep.error,
+        originalPath: remotePath,
+        changes: pathPrep.changes
+      });
     }
 
     // Use the sanitized path for upload
@@ -270,7 +234,7 @@ export async function handleUploadFile(args: any) {
       endpoint = `/me/drive/root:/${pathPrep.sanitizedPath}:/content`;
     }
 
-    const fileName = require('path').basename(pathPrep.sanitizedPath);
+    const fileName = basename(pathPrep.sanitizedPath);
     
     const response = await client.uploadFile(endpoint, localPath, fileName, {
       conflictBehavior
@@ -279,36 +243,25 @@ export async function handleUploadFile(args: any) {
     if (response.success && response.data) {
       const item = response.data as DriveItem;
       
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: 'File uploaded successfully',
-            pathChanges: pathPrep.changes,
-            originalPath: pathPrep.originalPath,
-            finalPath: pathPrep.sanitizedPath,
-            file: {
-              id: item.id,
-              name: item.name,
-              size: item.size,
-              webUrl: item.webUrl,
-              lastModified: item.lastModifiedDateTime
-            }
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        success: true,
+        message: 'File uploaded successfully',
+        pathChanges: pathPrep.changes,
+        originalPath: pathPrep.originalPath,
+        finalPath: pathPrep.sanitizedPath,
+        file: {
+          id: item.id,
+          name: item.name,
+          size: item.size,
+          webUrl: item.webUrl,
+          lastModified: item.lastModifiedDateTime
+        }
+      });
     }
 
     throw new Error('Failed to upload file');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error uploading file: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('upload_file', error);
   }
 }
 
@@ -364,32 +317,21 @@ export async function handleCreateFolder(args: any) {
     if (response.success && response.data) {
       const folder = response.data;
       
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: 'Folder created successfully',
-            folder: {
-              id: folder.id,
-              name: folder.name,
-              webUrl: folder.webUrl,
-              path: folder.parentReference.path + '/' + folder.name
-            }
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        success: true,
+        message: 'Folder created successfully',
+        folder: {
+          id: folder.id,
+          name: folder.name,
+          webUrl: folder.webUrl,
+          path: folder.parentReference.path + '/' + folder.name
+        }
+      });
     }
 
     throw new Error('Failed to create folder');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error creating folder: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('create_folder', error);
   }
 }
 
@@ -459,32 +401,21 @@ export async function handleMoveItem(args: any) {
     if (response.success && response.data) {
       const item = response.data;
       
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: 'Item moved/renamed successfully',
-            item: {
-              id: item.id,
-              name: item.name,
-              webUrl: item.webUrl,
-              path: item.parentReference.path + '/' + item.name
-            }
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        success: true,
+        message: 'Item moved/renamed successfully',
+        item: {
+          id: item.id,
+          name: item.name,
+          webUrl: item.webUrl,
+          path: item.parentReference.path + '/' + item.name
+        }
+      });
     }
 
     throw new Error('Failed to move/rename item');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error moving/renaming item: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('move_item', error);
   }
 }
 
@@ -536,30 +467,19 @@ export async function handleDeleteItem(args: any) {
     const response = await client.delete(endpoint);
 
     if (response.success) {
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: permanent 
-              ? 'Item permanently deleted' 
-              : 'Item moved to recycle bin',
-            itemId: itemId || 'path-based',
-            itemPath: itemPath || 'id-based'
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        success: true,
+        message: permanent 
+          ? 'Item permanently deleted' 
+          : 'Item moved to recycle bin',
+        itemId: itemId || 'path-based',
+        itemPath: itemPath || 'id-based'
+      });
     }
 
     throw new Error('Failed to delete item');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error deleting item: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('delete_item', error);
   }
 }
 
@@ -578,6 +498,10 @@ export const searchFiles: Tool = {
         type: 'string',
         description: 'SharePoint site ID (optional)'
       },
+      driveId: {
+        type: 'string',
+        description: 'Drive ID for a specific document library (optional)'
+      },
       fileTypes: {
         type: 'array',
         items: { type: 'string' },
@@ -587,6 +511,10 @@ export const searchFiles: Tool = {
         type: 'number',
         description: 'Maximum number of results',
         default: 50
+      },
+      pageToken: {
+        type: 'string',
+        description: 'Opaque pagination token from a previous response (Graph nextLink)'
       }
     },
     required: ['query']
@@ -596,14 +524,8 @@ export const searchFiles: Tool = {
 export async function handleSearchFiles(args: any) {
   try {
     const client = getGraphClient();
-    const { query, siteId, fileTypes, limit = 50 } = args;
-
-    let endpoint: string;
-    if (siteId) {
-      endpoint = `/sites/${siteId}/drive/root/search(q='${encodeURIComponent(query)}')`;
-    } else {
-      endpoint = `/me/drive/root/search(q='${encodeURIComponent(query)}')`;
-    }
+    const { query, siteId, driveId, fileTypes, limit = 50, pageToken } = args;
+    const endpoint = pageToken || buildDriveSearchEndpoint({ siteId, driveId }, query);
 
     const params: any = {
       '$top': limit.toString()
@@ -617,42 +539,33 @@ export async function handleSearchFiles(args: any) {
       params['$filter'] = typeFilter;
     }
 
-    const response = await client.get<GraphResponse<DriveItem>>(endpoint, params);
+    const response = await client.get<GraphResponse<DriveItem>>(endpoint, pageToken ? undefined : params);
 
     if (response.success && response.data) {
-      const items = (response.data as any).value || [];
+      const { items, pagination } = extractPaginatedResult(response.data, limit);
       
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            query,
-            siteId: siteId || 'personal',
-            resultCount: items.length,
-            results: items.map((item: DriveItem) => ({
-              id: item.id,
-              name: item.name,
-              size: item.size,
-              type: item.file ? 'file' : 'folder',
-              mimeType: item.file?.mimeType,
-              lastModified: item.lastModifiedDateTime,
-              webUrl: item.webUrl,
-              path: item.parentReference.path
-            }))
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        query,
+        target: describeDriveTarget({ siteId, driveId }),
+        resultCount: items.length,
+        pagination,
+        results: items.map((item: DriveItem) => ({
+          id: item.id,
+          name: item.name,
+          size: item.size,
+          type: item.file ? 'file' : 'folder',
+          mimeType: item.file?.mimeType,
+          lastModified: item.lastModifiedDateTime,
+          webUrl: item.webUrl,
+          path: item.parentReference.path,
+          driveId: item.parentReference.driveId
+        }))
+      });
     }
 
     throw new Error('Search failed');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error searching files: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('search_files', error);
   }
 }
 
@@ -741,23 +654,12 @@ export async function handleGetFileMetadata(args: any) {
         }
       }
 
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify(metadata, null, 2)
-        }]
-      };
+      return jsonTextResponse(metadata);
     }
 
     throw new Error('Failed to get metadata');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error getting metadata: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('get_file_metadata', error);
   }
 }
 
@@ -847,34 +749,23 @@ export async function handleShareItem(args: any) {
     if (response.success && response.data) {
       const permission = response.data;
       
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: 'Sharing link created successfully',
-            link: {
-              id: permission.id,
-              url: permission.link?.webUrl,
-              type: permission.link?.type,
-              scope: permission.link?.scope,
-              expirationDateTime: permission.expirationDateTime,
-              hasPassword: permission.hasPassword
-            }
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        success: true,
+        message: 'Sharing link created successfully',
+        link: {
+          id: permission.id,
+          url: permission.link?.webUrl,
+          type: permission.link?.type,
+          scope: permission.link?.scope,
+          expirationDateTime: permission.expirationDateTime,
+          hasPassword: permission.hasPassword
+        }
+      });
     }
 
     throw new Error('Failed to create sharing link');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error creating sharing link: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('share_item', error);
   }
 }
 
@@ -971,32 +862,21 @@ export async function handleCopyItem(args: any) {
     const response = await client.post(endpoint, copyData);
 
     if (response.success) {
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: 'Item copy initiated successfully',
-            note: 'Copy operation is asynchronous and may take some time to complete',
-            itemId: itemId || 'path-based',
-            itemPath: itemPath || 'id-based',
-            destinationFolderId,
-            destinationFolderPath,
-            newName
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        success: true,
+        message: 'Item copy initiated successfully',
+        note: 'Copy operation is asynchronous and may take some time to complete',
+        itemId: itemId || 'path-based',
+        itemPath: itemPath || 'id-based',
+        destinationFolderId,
+        destinationFolderPath,
+        newName
+      });
     }
 
     throw new Error('Failed to copy item');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error copying item: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('copy_item', error);
   }
 }
 
