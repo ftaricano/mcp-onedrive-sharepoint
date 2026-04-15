@@ -5,6 +5,7 @@
 
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { getGraphClient } from '../../graph/client.js';
+import { jsonTextResponse, toolErrorResponse } from '../../graph/contracts.js';
 import { DriveItem, UploadSession } from '../../graph/models.js';
 import { createUserFriendlyError } from '../../graph/error-handler.js';
 import * as fs from 'fs';
@@ -352,35 +353,24 @@ export async function handleSyncFolder(args: any) {
       }
     }
 
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          success: true,
-          localPath,
-          remotePath,
-          direction,
-          conflictResolution,
-          summary: {
-            uploaded: syncResults.uploaded.length,
-            downloaded: syncResults.downloaded.length,
-            skipped: syncResults.skipped.length,
-            conflicts: syncResults.conflicts.length,
-            deleted: syncResults.deleted.length,
-            errors: syncResults.errors.length
-          },
-          details: syncResults
-        }, null, 2)
-      }]
-    };
+    return jsonTextResponse({
+      success: true,
+      localPath,
+      remotePath,
+      direction,
+      conflictResolution,
+      summary: {
+        uploaded: syncResults.uploaded.length,
+        downloaded: syncResults.downloaded.length,
+        skipped: syncResults.skipped.length,
+        conflicts: syncResults.conflicts.length,
+        deleted: syncResults.deleted.length,
+        errors: syncResults.errors.length
+      },
+      details: syncResults
+    });
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error syncing folder: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('sync_folder', error);
   }
 }
 
@@ -646,24 +636,13 @@ export async function handleBatchFileOperations(args: any) {
       stopOnError
     };
 
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          success: summary.failed === 0,
-          summary,
-          results
-        }, null, 2)
-      }]
-    };
+    return jsonTextResponse({
+      success: summary.failed === 0,
+      summary,
+      results
+    });
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error in batch operations: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('batch_file_operations', error);
   }
 }
 

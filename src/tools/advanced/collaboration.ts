@@ -5,8 +5,8 @@
 
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { getGraphClient } from '../../graph/client.js';
+import { jsonTextResponse, toolErrorResponse } from '../../graph/contracts.js';
 import { DriveItem, Permission, User } from '../../graph/models.js';
-import { createUserFriendlyError } from '../../graph/error-handler.js';
 
 // Tool 1: Advanced sharing with email notifications
 export const advancedShare: Tool = {
@@ -118,36 +118,25 @@ export async function handleAdvancedShare(args: any) {
     if (response.success && response.data) {
       const permissions = response.data.value || [];
       
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            success: true,
-            message: 'Sharing invitations sent successfully',
-            recipientCount: recipients.length,
-            sendInvitation,
-            permissions: permissions.map((perm: any) => ({
-              id: perm.id,
-              grantedTo: perm.grantedTo?.user?.email || perm.grantedTo?.user?.displayName,
-              roles: perm.roles,
-              hasPassword: perm.hasPassword,
-              expirationDateTime: perm.expirationDateTime,
-              shareId: perm.shareId
-            }))
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        success: true,
+        message: 'Sharing invitations sent successfully',
+        recipientCount: recipients.length,
+        sendInvitation,
+        permissions: permissions.map((perm: any) => ({
+          id: perm.id,
+          grantedTo: perm.grantedTo?.user?.email || perm.grantedTo?.user?.displayName,
+          roles: perm.roles,
+          hasPassword: perm.hasPassword,
+          expirationDateTime: perm.expirationDateTime,
+          shareId: perm.shareId
+        }))
+      });
     }
 
     throw new Error('Failed to share item');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error sharing item: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('advanced_share', error);
   }
 }
 
@@ -225,38 +214,33 @@ export async function handleManagePermissions(args: any) {
         if (response.success && response.data) {
           const permissions = (response.data as any).value || [];
           
-          return {
-            content: [{
-              type: 'text',
-              text: JSON.stringify({
-                action: 'list',
-                permissionCount: permissions.length,
-                permissions: permissions.map((perm: any) => ({
-                  id: perm.id,
-                  roles: perm.roles,
-                  grantedTo: {
-                    user: perm.grantedTo?.user ? {
-                      email: perm.grantedTo.user.email,
-                      displayName: perm.grantedTo.user.displayName,
-                      id: perm.grantedTo.user.id
-                    } : null,
-                    application: perm.grantedTo?.application ? {
-                      displayName: perm.grantedTo.application.displayName,
-                      id: perm.grantedTo.application.id
-                    } : null
-                  },
-                  link: perm.link ? {
-                    type: perm.link.type,
-                    scope: perm.link.scope,
-                    webUrl: perm.link.webUrl
-                  } : null,
-                  inheritedFrom: perm.inheritedFrom,
-                  expirationDateTime: perm.expirationDateTime,
-                  hasPassword: perm.hasPassword
-                }))
-              }, null, 2)
-            }]
-          };
+          return jsonTextResponse({
+            action: 'list',
+            permissionCount: permissions.length,
+            permissions: permissions.map((perm: any) => ({
+              id: perm.id,
+              roles: perm.roles,
+              grantedTo: {
+                user: perm.grantedTo?.user ? {
+                  email: perm.grantedTo.user.email,
+                  displayName: perm.grantedTo.user.displayName,
+                  id: perm.grantedTo.user.id
+                } : null,
+                application: perm.grantedTo?.application ? {
+                  displayName: perm.grantedTo.application.displayName,
+                  id: perm.grantedTo.application.id
+                } : null
+              },
+              link: perm.link ? {
+                type: perm.link.type,
+                scope: perm.link.scope,
+                webUrl: perm.link.webUrl
+              } : null,
+              inheritedFrom: perm.inheritedFrom,
+              expirationDateTime: perm.expirationDateTime,
+              hasPassword: perm.hasPassword
+            }))
+          });
         }
         break;
       }
@@ -274,19 +258,14 @@ export async function handleManagePermissions(args: any) {
         const response = await client.patch<Permission>(endpoint, updateData);
 
         if (response.success && response.data) {
-          return {
-            content: [{
-              type: 'text',
-              text: JSON.stringify({
-                action: 'update',
-                success: true,
-                message: 'Permission updated successfully',
-                permissionId,
-                newRoles,
-                result: response.data
-              }, null, 2)
-            }]
-          };
+          return jsonTextResponse({
+            action: 'update',
+            success: true,
+            message: 'Permission updated successfully',
+            permissionId,
+            newRoles,
+            result: response.data
+          });
         }
         break;
       }
@@ -300,17 +279,12 @@ export async function handleManagePermissions(args: any) {
         const response = await client.delete(endpoint);
 
         if (response.success) {
-          return {
-            content: [{
-              type: 'text',
-              text: JSON.stringify({
-                action: 'revoke',
-                success: true,
-                message: 'Permission revoked successfully',
-                permissionId
-              }, null, 2)
-            }]
-          };
+          return jsonTextResponse({
+            action: 'revoke',
+            success: true,
+            message: 'Permission revoked successfully',
+            permissionId
+          });
         }
         break;
       }
@@ -321,13 +295,7 @@ export async function handleManagePermissions(args: any) {
 
     throw new Error(`Failed to ${action} permissions`);
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error managing permissions: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('manage_permissions', error);
   }
 }
 
@@ -431,43 +399,32 @@ export async function handleCheckUserAccess(args: any) {
         }
       });
 
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            userEmail,
-            hasAccess,
-            effectiveRoles: Array.from(effectiveRoles),
-            directPermissions: userPermissions.map((perm: any) => ({
-              id: perm.id,
-              roles: perm.roles,
-              type: perm.link ? 'link' : 'direct',
-              expirationDateTime: perm.expirationDateTime
-            })),
-            inheritedPermissions: inheritedPermissions.map((perm: any) => ({
-              id: perm.id,
-              roles: perm.roles,
-              inheritedFrom: perm.inheritedFrom
-            })),
-            summary: {
-              canRead: effectiveRoles.has('read') || effectiveRoles.has('write') || effectiveRoles.has('owner'),
-              canWrite: effectiveRoles.has('write') || effectiveRoles.has('owner'),
-              isOwner: effectiveRoles.has('owner')
-            }
-          }, null, 2)
-        }]
-      };
+      return jsonTextResponse({
+        userEmail,
+        hasAccess,
+        effectiveRoles: Array.from(effectiveRoles),
+        directPermissions: userPermissions.map((perm: any) => ({
+          id: perm.id,
+          roles: perm.roles,
+          type: perm.link ? 'link' : 'direct',
+          expirationDateTime: perm.expirationDateTime
+        })),
+        inheritedPermissions: inheritedPermissions.map((perm: any) => ({
+          id: perm.id,
+          roles: perm.roles,
+          inheritedFrom: perm.inheritedFrom
+        })),
+        summary: {
+          canRead: effectiveRoles.has('read') || effectiveRoles.has('write') || effectiveRoles.has('owner'),
+          canWrite: effectiveRoles.has('write') || effectiveRoles.has('owner'),
+          isOwner: effectiveRoles.has('owner')
+        }
+      });
     }
 
     throw new Error('Failed to check user access');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error checking user access: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('check_user_access', error);
   }
 }
 

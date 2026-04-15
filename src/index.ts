@@ -28,6 +28,7 @@ import { loadConfig } from './config/index.js';
 import { getAuthInstance, initializeAuth } from './auth/microsoft-graph-auth.js';
 import { getGraphClient, resetGraphClient } from './graph/client.js';
 import { createUserFriendlyError } from './graph/error-handler.js';
+import { toolErrorResponse } from './graph/contracts.js';
 
 class McpOneDriveSharePointServer {
   private server: Server;
@@ -155,13 +156,7 @@ class McpOneDriveSharePointServer {
       console.error(`Error in tool ${toolName}:`, error);
       
       // Return error in MCP format
-      return {
-        content: [{
-          type: 'text',
-          text: `Error in ${toolName}: ${createUserFriendlyError(error)}`
-        }],
-        isError: true
-      };
+      return toolErrorResponse(toolName, error);
     }
   }
 

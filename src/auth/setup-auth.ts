@@ -1,101 +1,90 @@
 #!/usr/bin/env tsx
 
 /**
- * Authentication setup script for OneDrive/SharePoint MCP server
- * Run this script to authenticate with Microsoft Graph
+ * Authentication setup script for OneDrive/SharePoint MCP server.
  */
 
-import { initializeAuth } from './microsoft-graph-auth';
-import * as readline from 'readline';
+import * as dotenv from 'dotenv';
+import * as readline from 'node:readline/promises';
+import { stdin as input, stdout as output } from 'node:process';
+import { fileURLToPath } from 'node:url';
+import { initializeAuth } from './microsoft-graph-auth.js';
 
-async function setupAuthentication() {
-  console.log('🔧 OneDrive/SharePoint MCP Server - Authentication Setup');
-  console.log('='.repeat(60));
+dotenv.config();
 
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
+async function promptForMissingValue(
+  rl: readline.Interface,
+  label: string,
+  currentValue?: string,
+  fallback?: string
+): Promise<string> {
+  if (currentValue?.trim()) {
+    return currentValue.trim();
+  }
 
-  const question = (query: string): Promise<string> => {
-    return new Promise(resolve => rl.question(query, resolve));
-  };
+  const suffix = fallback ? ` (${fallback})` : '';
+  const answer = await rl.question(`${label}${suffix}: `);
+  return (answer.trim() || fallback || '').trim();
+}
+
+async function setupAuthentication(): Promise<void> {
+  console.log('OneDrive/SharePoint MCP Server - Authentication Setup');
+  console.log('======================================================');
+
+  const rl = readline.createInterface({ input, output });
 
   try {
-    // Get client ID
-    const clientId = process.env.MICROSOFT_GRAPH_CLIENT_ID || 
-      await question('Enter your Azure App Client ID: ');
+    const clientId = await promptForMissingValue(
+      rl,
+      'Azure App Client ID',
+      process.env.MICROSOFT_GRAPH_CLIENT_ID
+    );
 
-    if (!clientId.trim()) {
+    if (!clientId) {
       throw new Error('Client ID is required');
     }
 
-    // Get tenant ID (optional)
-    const defaultTenant = process.env.MICROSOFT_GRAPH_TENANT_ID || 'common';
-    const tenantInput = await question(`Enter your Tenant ID (press Enter for '${defaultTenant}'): `);
-    const tenantId = tenantInput.trim() || defaultTenant;
+    const tenantId = await promptForMissingValue(
+      rl,
+      'Tenant ID',
+      process.env.MICROSOFT_GRAPH_TENANT_ID,
+      'common'
+    );
 
-    // Initialize auth
-    const auth = initializeAuth({
-      clientId: clientId.trim(),
-      tenantId: tenantId.trim()
-    });
+    const auth = initializeAuth({ clientId, tenantId });
 
-    console.log('\n🔑 Starting authentication process...');
-    
-    // Authenticate
+    console.log('\nStarting Microsoft Graph device-code authentication...');
     const tokenInfo = await auth.authenticate();
-    
-    console.log('\n✅ Authentication successful!');
-    console.log(`👤 User: ${tokenInfo.account.username}`);
+
+    console.log('\nAuthentication successful.');
+    console.log(`User: ${tokenInfo.account.username}`);
     if (tokenInfo.account.name) {
-      console.log(`📝 Name: ${tokenInfo.account.name}`);
+      console.log(`Name: ${tokenInfo.account.name}`);
     }
     if (tokenInfo.account.tenantId) {
-      console.log(`🏢 Tenant: ${tokenInfo.account.tenantId}`);
+      console.log(`Tenant: ${tokenInfo.account.tenantId}`);
     }
-    console.log(`⏰ Token expires: ${tokenInfo.expiresOn.toLocaleString()}`);
-
-    console.log('\n🎉 Setup complete! You can now use the MCP server.');
-    console.log('\nNext steps:');
-    console.log('1. Add this server to your Claude Code configuration');
-    console.log('2. Run: npm run build && npm start');
-
-  } catch (error) {
-    console.error('\n❌ Authentication setup failed:');
-    console.error(error instanceof Error ? error.message : 'Unknown error');
-    process.exit(1);
+    console.log(`Token expires: ${tokenInfo.expiresOn.toLocaleString()}`);
+    console.log('\nNext steps: npm run build && npm start');
   } finally {
     rl.close();
   }
 }
 
-// Handle environment variables
-function checkEnvironment() {
-  const requiredEnvVars = ['MICROSOFT_GRAPH_CLIENT_ID'];
-  const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
-
-  if (missingVars.length > 0) {
-    console.log('⚠️  Missing environment variables:');
-    missingVars.forEach(varName => {
-      console.log(`   - ${varName}`);
-    });
-    console.log('\nYou can either:');
-    console.log('1. Set environment variables in .env file');
-    console.log('2. Provide them during this setup process');
-    console.log('');
+async function main(): Promise<void> {
+  if (!process.env.MICROSOFT_GRAPH_CLIENT_ID) {
+    console.log('Tip: you can set MICROSOFT_GRAPH_CLIENT_ID in .env to avoid retyping it.\n');
   }
-}
 
-// Main execution
-async function main() {
-  checkEnvironment();
   await setupAuthentication();
 }
 
-if (require.main === module) {
-  main().catch(error => {
-    console.error('Setup failed:', error);
+const isDirectRun = process.argv[1] === fileURLToPath(import.meta.url);
+
+if (isDirectRun) {
+  main().catch((error) => {
+    console.error('\nAuthentication setup failed:');
+    console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   });
 }

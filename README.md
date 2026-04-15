@@ -1,442 +1,180 @@
 # MCP OneDrive/SharePoint Server
 
-A comprehensive Model Context Protocol (MCP) server providing unified access to OneDrive and SharePoint through Microsoft Graph API.
+MCP server for Microsoft Graph focused on OneDrive, SharePoint and related document workflows.
 
-## Features
+This repository now has working onboarding and quality commands on a clean clone:
+- `npm run build`
+- `npm run lint`
+- `npm test`
+- `npm run ci`
+- `npm run setup-auth`
 
-### 🔄 Unified File Operations
-- **OneDrive & SharePoint**: Single API for both personal OneDrive and SharePoint document libraries
-- **Complete CRUD**: Upload, download, move, rename, delete, search files and folders
-- **Advanced Search**: Content search with metadata filtering
-- **Sharing Management**: Create and manage sharing links with permissions
-- **Large File Support**: Resumable uploads for files > 4MB
+## What is implemented
 
-### 💼 File Management
-- **Multi-format Support**: Handle various file types including Office documents
-- **Metadata Access**: Read and write file properties and custom metadata
-- **Version Control**: Access file version history and restore previous versions
-- **Bulk Operations**: Perform operations on multiple files efficiently
+The server exposes 32 MCP tools grouped into:
+- Files: `list_files`, `download_file`, `upload_file`, `create_folder`, `move_item`, `delete_item`, `search_files`, `get_file_metadata`, `share_item`, `copy_item`
+- SharePoint: `discover_sites`, `list_site_lists`, `get_list_schema`, `list_items`, `get_list_item`, `create_list_item`, `update_list_item`, `delete_list_item`
+- Utilities: `health_check`, `get_user_profile`, `list_drives`, `global_search`, `batch_operations`
+- Advanced: `advanced_share`, `manage_permissions`, `check_user_access`, `sync_folder`, `batch_file_operations`, `storage_analytics`, `version_management`, `excel_operations`, `excel_analysis`
 
-### 📋 SharePoint Lists Management
-- **Site Discovery**: List and search SharePoint sites
-- **List Operations**: Create, read, update, delete SharePoint lists
-- **Item Management**: Full CRUD operations on list items
-- **Schema Access**: Get list schemas and column definitions
-- **Content Types**: Work with SharePoint content types
+## Recent foundation improvements
 
-### 🏢 Business Account Optimizations
-- **Multi-Tenant Support**: Works with both personal and business accounts
-- **Device Code Flow**: Secure authentication optimized for CLI/MCP usage
-- **Enterprise Features**: Advanced permissions, compliance, audit logging
-- **Performance**: Intelligent caching, batch operations, retry logic
+This version includes real structural improvements instead of documentation-only changes:
+- fixed `npm run setup-auth` to call the real TypeScript auth setup flow
+- added working ESLint configuration
+- added executable tests with Node's built-in test runner
+- aligned README and `.env.example` with the real environment variables and scripts
+- introduced reusable Graph helpers for:
+  - consistent MCP JSON/error envelopes
+  - pagination extraction from Microsoft Graph responses
+  - resolving OneDrive/SharePoint resources by `driveId`, `siteId`, `itemId` and path
+- updated key listing/search flows to return pagination metadata and support `driveId`
+
+## Requirements
+
+- Node.js 18+
+- A Microsoft Entra ID / Azure app registration for delegated device-code authentication
 
 ## Installation
 
-### Prerequisites
-- Node.js 18.0.0 or higher
-- A Microsoft Azure application registration
-
-### Setup
-
-1. **Clone and install dependencies:**
 ```bash
 git clone <repository-url>
 cd mcp-onedrive-sharepoint
 npm install
-```
-
-2. **Azure App Registration:**
-   - Go to [Azure Portal](https://portal.azure.com) > Azure Active Directory > App registrations
-   - Create a new registration or use existing one
-   - Configure authentication:
-     - Platform: Mobile and desktop applications
-     - Redirect URI: `http://localhost` (for device code flow)
-   - API Permissions:
-     - Microsoft Graph:
-       - `Files.ReadWrite.All` (Application)
-       - `Sites.ReadWrite.All` (Application)
-       - `User.Read` (Delegated)
-       - `offline_access` (Delegated)
-
-3. **Environment Configuration:**
-```bash
 cp .env.example .env
-# Edit .env with your Azure app credentials
-```
-
-4. **Build the server:**
-```bash
-npm run build
 ```
 
 ## Configuration
 
-### Environment Variables
+The server reads the following environment variables:
 
 ```bash
-# Required
-MICROSOFT_CLIENT_ID=your-application-client-id
-
-# Optional (defaults to 'common' for multi-tenant)
-MICROSOFT_TENANT_ID=common  # or specific tenant ID for single-tenant
+MICROSOFT_GRAPH_CLIENT_ID=your_app_client_id
+MICROSOFT_GRAPH_TENANT_ID=common
+MICROSOFT_GRAPH_SCOPES=Files.ReadWrite.All,Sites.ReadWrite.All,Directory.Read.All,User.Read,offline_access
+MICROSOFT_GRAPH_BASE_URL=https://graph.microsoft.com/v1.0
+MICROSOFT_GRAPH_TIMEOUT=30000
+MICROSOFT_GRAPH_MAX_RETRIES=3
+MICROSOFT_GRAPH_CACHE_ENABLED=true
+MICROSOFT_GRAPH_CACHE_TTL=3600
 ```
 
-### Business vs Personal Accounts
+Notes:
+- use `MICROSOFT_GRAPH_TENANT_ID=common` for multi-tenant/device-code onboarding
+- use a specific tenant id if you want tenant-scoped sign-in
+- delegated scopes are what the current auth flow uses
 
-**Multi-Tenant (Personal + Business):**
+## Authentication setup
+
+Run:
+
 ```bash
-MICROSOFT_TENANT_ID=common
+npm run setup-auth
 ```
 
-**Single Business Tenant:**
-```bash
-MICROSOFT_TENANT_ID=your-tenant-id-here
-```
+The script:
+- reads `MICROSOFT_GRAPH_CLIENT_ID` / `MICROSOFT_GRAPH_TENANT_ID` from `.env` when present
+- prompts for missing values
+- starts Microsoft device-code login
+- stores the token through the existing auth layer
 
-## Usage
+## Development commands
 
-### Start the MCP Server
 ```bash
+npm run build
+npm run lint
+npm test
+npm run ci
 npm start
 ```
 
-### Authentication
-```bash
-# First time authentication
-use tool: authenticate
+`npm run ci` is the local verification entrypoint and is also what GitHub Actions runs on every PR/push.
 
-# Force re-authentication
-use tool: authenticate with forceReauth: true
-```
+## MCP behavior notes
 
-The server uses device code flow - you'll get a code to enter at https://microsoft.com/devicelogin.
+### Root site inclusion
 
-## Tool Reference
+`discover_sites.includePersonalSite=true` currently attempts to append the tenant root SharePoint site (`/sites/root`) when it is available to the authenticated user.
+It does not discover or synthesize a personal OneDrive site.
 
-### File Management (10 tools)
+### Pagination
 
-#### `list_files`
-List files and folders in OneDrive or SharePoint.
+The following tools now expose consistent pagination metadata in their JSON payloads:
+- `list_files`
+- `search_files`
+- `discover_sites`
+- `list_site_lists`
+- `list_items`
+
+When Microsoft Graph returns `@odata.nextLink`, the response includes:
+- `pagination.returned`
+- `pagination.limit`
+- `pagination.totalCount` when available
+- `pagination.nextPageToken`
+- `pagination.hasMore`
+
+Pass `pageToken` back to the same tool to continue paging.
+
+### Drive/site targeting
+
+Core file listing/search/download flows now accept:
+- `siteId` for a SharePoint site's default drive
+- `driveId` for a specific document library or drive
+- path-based addressing where supported
+
+This is the current foundation for moving beyond a `/me/drive`-only model.
+
+## Example tool inputs
+
+### List files from a specific drive
+
 ```json
 {
-  "driveId": "optional-drive-id",
-  "folderId": "optional-folder-id", 
-  "folderPath": "/Documents/Projects",
-  "top": 100,
-  "orderBy": "name",
-  "filter": "file ne null"
+  "driveId": "b!abc123",
+  "path": "/Shared Documents",
+  "limit": 50
 }
 ```
 
-#### `upload_file`
-Upload files with automatic large file handling.
+### Continue a paginated file listing
+
 ```json
 {
-  "driveId": "optional-drive-id",
-  "folderPath": "/Documents",
-  "fileName": "report.xlsx",
-  "content": "base64-encoded-content",
-  "conflictBehavior": "rename"
+  "driveId": "b!abc123",
+  "pageToken": "https://graph.microsoft.com/v1.0/drives/b!abc123/root/children?$skiptoken=..."
 }
 ```
 
-#### `download_file`
-Download files as base64-encoded content.
-```json
-{
-  "driveId": "optional-drive-id",
-  "fileId": "file-id-here",
-  "filePath": "/Documents/report.xlsx"
-}
-```
+### Search files in a site drive
 
-#### `search_files`
-Advanced file search with filters.
 ```json
 {
+  "siteId": "contoso.sharepoint.com,123,456",
   "query": "quarterly report",
-  "fileType": "xlsx",
-  "modifiedAfter": "2024-01-01T00:00:00Z",
-  "top": 50
+  "limit": 25
 }
 ```
 
-#### `share_file`
-Create sharing links with permissions.
+### List SharePoint list items with pagination
+
 ```json
 {
-  "itemId": "file-id-here",
-  "type": "edit",
-  "scope": "organization",
-  "expirationDateTime": "2024-12-31T23:59:59Z"
+  "siteId": "contoso.sharepoint.com,123,456",
+  "listId": "9c6b8b70-0000-0000-0000-111111111111",
+  "orderBy": "Created desc",
+  "limit": 100
 }
 ```
 
-### SharePoint Lists (8 tools)
+## Quality status
 
-#### `list_sharepoint_sites`
-Discover available SharePoint sites.
-```json
-{
-  "search": "project sites",
-  "top": 50
-}
-```
+Validated locally after these changes:
+- `npm run build` ✅
+- `npm run lint` ✅
+- `npm test` ✅
 
-#### `get_list_items`
-Get items from SharePoint lists.
-```json
-{
-  "siteId": "site-id-here",
-  "listId": "list-id-here",
-  "filter": "Status eq 'Active'",
-  "orderBy": "Modified desc",
-  "top": 100
-}
-```
+## Current limitations
 
-#### `create_list_item`
-Create new SharePoint list items.
-```json
-{
-  "siteId": "site-id-here", 
-  "listId": "list-id-here",
-  "fields": {
-    "Title": "New Project",
-    "Status": "Planning",
-    "DueDate": "2024-12-31"
-  }
-}
-```
-
-### Excel Integration (12 tools)
-
-#### `get_workbook_info`
-Get Excel workbook metadata without downloading.
-```json
-{
-  "driveId": "optional-drive-id",
-  "fileId": "excel-file-id",
-  "filePath": "/Documents/budget.xlsx"
-}
-```
-
-#### `get_worksheet_data`
-Extract data from Excel worksheets.
-```json
-{
-  "fileId": "excel-file-id",
-  "worksheetId": "Sheet1",
-  "range": "A1:E10",
-  "includeFormulas": true
-}
-```
-
-#### `set_range_values`
-Update Excel ranges directly.
-```json
-{
-  "fileId": "excel-file-id",
-  "worksheetId": "Sheet1", 
-  "range": "A1:B2",
-  "values": [["Name", "Value"], ["Product A", 100]]
-}
-```
-
-#### `get_table_data`
-Access Excel table data.
-```json
-{
-  "fileId": "excel-file-id",
-  "worksheetId": "Sheet1",
-  "tableId": "Table1",
-  "includeHeaders": true
-}
-```
-
-#### `execute_formula`
-Run Excel formulas and get results.
-```json
-{
-  "fileId": "excel-file-id",
-  "worksheetId": "Sheet1",
-  "formula": "=SUM(A1:A10)"
-}
-```
-
-#### `create_chart`
-Create charts in Excel programmatically.
-```json
-{
-  "fileId": "excel-file-id",
-  "worksheetId": "Sheet1",
-  "chartType": "ColumnClustered",
-  "sourceData": "A1:B10",
-  "title": "Sales Data"
-}
-```
-
-### Utility Tools (5 tools)
-
-#### `get_drive_info`
-Get drive information and storage quota.
-```json
-{
-  "driveId": "optional-drive-id"
-}
-```
-
-#### `search_content`
-Universal content search across all accessible resources.
-```json
-{
-  "query": "project timeline",
-  "entityTypes": ["driveItem", "listItem", "site"],
-  "top": 50
-}
-```
-
-## Architecture
-
-### Core Components
-
-```
-src/
-├── server.ts              # Main MCP server
-├── auth/
-│   └── microsoft-graph-auth.ts  # OAuth 2.0 + device code flow
-├── graph/
-│   ├── client.ts          # Microsoft Graph API client
-│   └── models.ts          # TypeScript models
-├── tools/
-│   ├── files/             # File management tools
-│   ├── sharepoint/        # SharePoint list tools  
-│   ├── excel/             # Excel integration tools
-│   └── utils/             # Utility tools
-└── config/
-    ├── endpoints.ts       # API endpoint definitions
-    └── scopes.ts          # OAuth scopes configuration
-```
-
-### Authentication Flow
-
-1. **Device Code Flow**: Optimized for CLI/MCP environments
-2. **Secure Storage**: Tokens stored in system keychain
-3. **Auto-Refresh**: Automatic token refresh with retry logic
-4. **Business Ready**: Multi-tenant and single-tenant support
-
-### Error Handling
-
-- **Retry Logic**: Exponential backoff for rate limits
-- **Graceful Degradation**: Fallback strategies for failures
-- **Detailed Errors**: Clear error messages with context
-- **Business Context**: Enterprise-specific error handling
-
-## Business Account Features
-
-### Multi-Tenant Support
-Works seamlessly with:
-- Personal Microsoft accounts (outlook.com, hotmail.com)
-- Business accounts (Office 365, Azure AD)
-- Government clouds (with configuration)
-
-### Enterprise Optimizations
-- **Admin Consent**: Support for admin-consented permissions
-- **Compliance**: Audit logging and data classification awareness
-- **Performance**: Batch operations and intelligent caching
-- **Security**: Minimal scope requests and secure token storage
-
-### SharePoint Integration
-- **Site Discovery**: Find sites across the organization
-- **Document Libraries**: Access as unified drives
-- **List Management**: Full CRUD on business lists
-- **Content Types**: Support for SharePoint content types
-
-## Development
-
-### Build and Test
-```bash
-# Development mode
-npm run dev
-
-# Build for production  
-npm run build
-
-# Run tests
-npm test
-
-# Linting
-npm run lint
-```
-
-### Authentication Setup
-```bash
-# Initial authentication setup
-npm run auth
-```
-
-### MCP Integration
-Add to your MCP client configuration:
-```json
-{
-  "mcpServers": {
-    "onedrive-sharepoint": {
-      "command": "node",
-      "args": ["/path/to/mcp-onedrive-sharepoint/build/server.js"]
-    }
-  }
-}
-```
-
-## Troubleshooting
-
-### Authentication Issues
-- Ensure correct client ID and tenant configuration
-- Check that required permissions are granted
-- For business accounts, admin consent may be required
-
-### Permission Errors
-- Verify Azure app has correct Graph API permissions
-- Business accounts may need additional scopes
-- Check user permissions in SharePoint/OneDrive
-
-### File Access Issues
-- Ensure files exist and user has access
-- Check file locks (Excel files may be locked by other users)
-- Verify drive ID resolution for SharePoint document libraries
-
-## Security Considerations
-
-### Token Management
-- Tokens stored securely in system keychain
-- Automatic refresh with secure storage
-- No tokens logged or exposed in errors
-
-### Permissions
-- Follows principle of least privilege
-- Requests only necessary scopes
-- Supports admin consent for business scenarios
-
-### Data Protection
-- No local file caching by default
-- Secure HTTPS connections only
-- Enterprise compliance awareness
-
-## License
-
-MIT License - see LICENSE file for details.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Submit a pull request
-
-## Support
-
-For issues and questions:
-- Check the troubleshooting section
-- Review Microsoft Graph API documentation
-- Open an issue on GitHub
+- authentication still depends on real Microsoft Graph credentials and an interactive device-code login
+- only the most critical listing/search foundations were migrated to the new pagination/resource helpers in this pass; other tools still use older direct endpoint construction
+- advanced tools exist, but this PR focuses on onboarding, contract clarity and foundation hardening rather than a full architectural rewrite

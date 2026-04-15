@@ -5,9 +5,26 @@
 
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { getGraphClient } from '../../graph/client.js';
-import { getAuthInstance } from '../../auth/microsoft-graph-auth.js';
 import { User, Drive, Site, GraphResponse } from '../../graph/models.js';
-import { createUserFriendlyError } from '../../graph/error-handler.js';
+import { jsonTextResponse, toolErrorResponse } from '../../graph/contracts.js';
+
+type UtilityDependencies = {
+  getGraphClient: typeof getGraphClient;
+  getAuthInstance: () => Promise<{ isAuthenticated(): Promise<boolean> }>;
+};
+
+let utilityDependencies: UtilityDependencies = {
+  getGraphClient,
+  getAuthInstance: async () => (await import('../../auth/microsoft-graph-auth.js')).getAuthInstance()
+};
+
+export function __setUtilityDependenciesForTests(overrides?: Partial<UtilityDependencies>): void {
+  utilityDependencies = {
+    getGraphClient,
+    getAuthInstance: async () => (await import('../../auth/microsoft-graph-auth.js')).getAuthInstance(),
+    ...overrides
+  };
+}
 
 // Tool 1: Health check and authentication status
 export const healthCheck: Tool = {
@@ -33,8 +50,8 @@ export const healthCheck: Tool = {
 export async function handleHealthCheck(args: any) {
   try {
     const { includeUserInfo = true, includeDriveInfo = true } = args;
-    const client = getGraphClient();
-    const auth = getAuthInstance();
+    const client = utilityDependencies.getGraphClient();
+    const auth = await utilityDependencies.getAuthInstance();
 
     // Check authentication status
     const isAuthenticated = await auth.isAuthenticated();
@@ -54,12 +71,7 @@ export async function handleHealthCheck(args: any) {
       healthStatus.status = 'authentication_required';
       healthStatus.message = 'Please authenticate using the setup-auth script';
       
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify(healthStatus, null, 2)
-        }]
-      };
+      return jsonTextResponse(healthStatus);
     }
 
     // Test API connectivity
@@ -114,20 +126,9 @@ export async function handleHealthCheck(args: any) {
       sharingLinks: true
     };
 
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify(healthStatus, null, 2)
-      }]
-    };
+    return jsonTextResponse(healthStatus);
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error performing health check: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('health_check', error);
   }
 }
 
@@ -215,20 +216,9 @@ export async function handleGetUserProfile(args: any) {
       }
     }
 
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify(profile, null, 2)
-      }]
-    };
+    return jsonTextResponse(profile);
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error getting user profile: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('get_user_profile', error);
   }
 }
 
@@ -341,20 +331,9 @@ export async function handleListDrives(args: any) {
       })
     };
 
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify(result, null, 2)
-      }]
-    };
+    return jsonTextResponse(result);
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error listing drives: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('list_drives', error);
   }
 }
 
@@ -454,12 +433,7 @@ export async function handleGlobalSearch(args: any) {
           });
         });
 
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify(results, null, 2)
-          }]
-        };
+        return jsonTextResponse(results);
       }
     } catch (searchError) {
       // Fall back to drive search if Microsoft Search fails
@@ -490,23 +464,12 @@ export async function handleGlobalSearch(args: any) {
         }))
       };
 
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify(results, null, 2)
-        }]
-      };
+      return jsonTextResponse(results);
     }
 
     throw new Error('Search failed');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error performing search: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('global_search', error);
   }
 }
 
@@ -601,23 +564,12 @@ export async function handleBatchOperations(args: any) {
         successRate: Math.round((successCount / result.responses.length) * 100)
       };
 
-      return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify(result, null, 2)
-        }]
-      };
+      return jsonTextResponse(result);
     }
 
     throw new Error('Batch operation failed');
   } catch (error) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error executing batch operations: ${createUserFriendlyError(error)}`
-      }],
-      isError: true
-    };
+    return toolErrorResponse('batch_operations', error);
   }
 }
 

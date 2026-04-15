@@ -2,12 +2,12 @@
  * Enhanced Microsoft Graph API client
  * Optimized for OneDrive, SharePoint, and Excel operations
  */
-
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
-import { getAuthInstance } from '../auth/microsoft-graph-auth';
-import { GraphApiError, RetryHelper } from './error-handler';
-import { GRAPH_BASE_URL, buildUrl } from '../config/endpoints';
-import { GraphResponse, WorkbookSession, McpResponse } from './models';
+import { basename } from 'node:path';
+import { getAuthInstance } from '../auth/microsoft-graph-auth.js';
+import { GraphApiError, RetryHelper } from './error-handler.js';
+import { GRAPH_BASE_URL, buildUrl } from '../config/endpoints.js';
+import { GraphResponse, WorkbookSession, McpResponse } from './models.js';
 import { metadataCache, searchCache, driveCache } from '../utils/cache-manager.js';
 import { SecurityValidator, AuditLogger } from '../utils/security-validator.js';
 import * as FormData from 'form-data';
@@ -50,6 +50,7 @@ export class GraphClient {
     this.axios.interceptors.request.use(
       async (config) => {
         // Add authentication header
+        const { getAuthInstance } = await import('../auth/microsoft-graph-auth.js');
         const auth = getAuthInstance();
         const token = await auth.getAccessToken();
         config.headers.Authorization = `Bearer ${token}`;
@@ -271,7 +272,7 @@ export class GraphClient {
     const sessionData = {
       item: {
         '@microsoft.graph.conflictBehavior': options.conflictBehavior || 'rename',
-        name: fileName || require('path').basename(filePath)
+        name: fileName || basename(filePath)
       }
     };
     
@@ -531,7 +532,7 @@ export class GraphClient {
     }
 
     // Validate file name
-    const actualFileName = fileName || require('path').basename(filePath);
+    const actualFileName = fileName || basename(filePath);
     const nameValidation = SecurityValidator.validateFileName(actualFileName);
     if (!nameValidation.isValid) {
       throw new GraphApiError(nameValidation.error!, 'File name validation');
@@ -598,6 +599,7 @@ export class GraphClient {
 
   private async getCurrentUserSafe(): Promise<string> {
     try {
+      const { getAuthInstance } = await import('../auth/microsoft-graph-auth.js');
       const auth = getAuthInstance();
       const user = await auth.getCurrentUser();
       return user?.username || 'unknown';
@@ -667,7 +669,7 @@ export class GraphClient {
     this.clearCaches();
     
     // Cleanup cache managers
-    const { cleanupAllCaches } = await import('../utils/cache-manager');
+    const { cleanupAllCaches } = await import('../utils/cache-manager.js');
     cleanupAllCaches();
   }
 }
@@ -687,4 +689,8 @@ export function resetGraphClient(): void {
     clientInstance.cleanup();
     clientInstance = null;
   }
+}
+
+export function __setGraphClientInstanceForTests(client: GraphClient | null): void {
+  clientInstance = client;
 }
