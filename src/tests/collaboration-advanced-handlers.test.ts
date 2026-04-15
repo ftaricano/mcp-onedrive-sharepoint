@@ -1,4 +1,4 @@
-import { afterEach, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { __setGraphClientInstanceForTests } from '../graph/client.js';
@@ -7,11 +7,10 @@ import {
   handleCheckUserAccess,
   handleManagePermissions,
 } from '../tools/advanced/collaboration.js';
+import { registerGraphClientTestLifecycle } from './helpers/test-lifecycle.js';
 import { createMockGraphClient, parsePayload, type ToolEnvelope } from './helpers/tool-test-helpers.js';
 
-afterEach(() => {
-  __setGraphClientInstanceForTests(null);
-});
+registerGraphClientTestLifecycle();
 
 test('advanced_share covers itemPath payload composition including owner role and optional fields', async () => {
   const mock = createMockGraphClient({

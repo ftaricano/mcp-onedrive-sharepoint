@@ -1,13 +1,12 @@
-import { afterEach, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { __setGraphClientInstanceForTests } from '../graph/client.js';
 import { handleExcelAnalysis, handleExcelOperations } from '../tools/advanced/excel.js';
+import { registerGraphClientTestLifecycle } from './helpers/test-lifecycle.js';
 import { createMockGraphClient, parsePayload, type ToolEnvelope } from './helpers/tool-test-helpers.js';
 
-afterEach(() => {
-  __setGraphClientInstanceForTests(null);
-});
+registerGraphClientTestLifecycle();
 
 test('excel_operations resolves itemPath, creates session, executes operation, and closes session', async () => {
   const mock = createMockGraphClient({

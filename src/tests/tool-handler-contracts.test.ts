@@ -12,7 +12,7 @@ import { handleBatchFileOperations, handleSyncFolder } from '../tools/advanced/s
 import { handleExcelAnalysis, handleExcelOperations } from '../tools/advanced/excel.js';
 import { handleAdvancedShare, handleManagePermissions } from '../tools/advanced/collaboration.js';
 import { handleStorageAnalytics, handleVersionManagement } from '../tools/advanced/analytics.js';
-import { cleanupAllCaches } from '../utils/cache-manager.js';
+import { registerGraphClientTestLifecycle } from './helpers/test-lifecycle.js';
 
 type ToolEnvelope = {
   content: Array<{ type: string; text: string }>;
@@ -23,14 +23,10 @@ function parsePayload(response: ToolEnvelope) {
   return JSON.parse(response.content[0].text);
 }
 
-test.afterEach(() => {
-  __setGraphClientInstanceForTests(null);
-  __setUtilityDependenciesForTests();
-  cleanupAllCaches();
-});
+registerGraphClientTestLifecycle();
 
-test.after(() => {
-  cleanupAllCaches();
+test.afterEach(() => {
+  __setUtilityDependenciesForTests();
 });
 
 test('health_check handler returns centralized MCP contract on success', async () => {

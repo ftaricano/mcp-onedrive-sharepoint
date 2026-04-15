@@ -1,10 +1,11 @@
-import { afterEach, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 
 import { __setGraphClientInstanceForTests } from '../graph/client.js';
 import { handleBatchFileOperations, handleSyncFolder } from '../tools/advanced/sync.js';
+import { registerGraphClientTestLifecycle } from './helpers/test-lifecycle.js';
 import {
   cleanupTempDir,
   createMockGraphClient,
@@ -14,9 +15,7 @@ import {
   type ToolEnvelope,
 } from './helpers/tool-test-helpers.js';
 
-afterEach(() => {
-  __setGraphClientInstanceForTests(null);
-});
+registerGraphClientTestLifecycle();
 
 test('sync_folder covers upload conflict resolution branches', async () => {
   const scenarios = [

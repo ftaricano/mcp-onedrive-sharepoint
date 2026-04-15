@@ -1,13 +1,12 @@
-import { afterEach, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { __setGraphClientInstanceForTests } from '../graph/client.js';
 import { handleStorageAnalytics, handleVersionManagement } from '../tools/advanced/analytics.js';
+import { registerGraphClientTestLifecycle } from './helpers/test-lifecycle.js';
 import { createMockGraphClient, parsePayload, type ToolEnvelope } from './helpers/tool-test-helpers.js';
 
-afterEach(() => {
-  __setGraphClientInstanceForTests(null);
-});
+registerGraphClientTestLifecycle();
 
 test('storage_analytics covers summary, duplicates, large_files, file_types, detailed recursion, and version aggregation', async () => {
   const drive = {
