@@ -4,9 +4,10 @@
  */
 
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { basename } from 'node:path';
 import { getGraphClient } from '../../graph/client.js';
 import { DriveItem, Permission, UploadSession, GraphResponse } from '../../graph/models.js';
-import { extractPaginatedResult, jsonTextErrorResponse, jsonTextResponse, toolErrorResponse } from '../../graph/contracts.js';
+import { extractPaginatedResult, jsonTextResponse, toolErrorResponse, jsonTextErrorResponse } from '../../graph/contracts.js';
 import {
   buildDriveChildrenEndpoint,
   buildDriveItemEndpoint,
@@ -233,7 +234,7 @@ export async function handleUploadFile(args: any) {
       endpoint = `/me/drive/root:/${pathPrep.sanitizedPath}:/content`;
     }
 
-    const fileName = require('path').basename(pathPrep.sanitizedPath);
+    const fileName = basename(pathPrep.sanitizedPath);
     
     const response = await client.uploadFile(endpoint, localPath, fileName, {
       conflictBehavior

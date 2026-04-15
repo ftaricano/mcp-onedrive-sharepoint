@@ -2,8 +2,9 @@
  * Enhanced Microsoft Graph API client
  * Optimized for OneDrive, SharePoint, and Excel operations
  */
-
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
+import { basename } from 'node:path';
+import { getAuthInstance } from '../auth/microsoft-graph-auth.js';
 import { GraphApiError, RetryHelper } from './error-handler.js';
 import { GRAPH_BASE_URL, buildUrl } from '../config/endpoints.js';
 import { GraphResponse, WorkbookSession, McpResponse } from './models.js';
@@ -271,7 +272,7 @@ export class GraphClient {
     const sessionData = {
       item: {
         '@microsoft.graph.conflictBehavior': options.conflictBehavior || 'rename',
-        name: fileName || require('path').basename(filePath)
+        name: fileName || basename(filePath)
       }
     };
     
@@ -531,7 +532,7 @@ export class GraphClient {
     }
 
     // Validate file name
-    const actualFileName = fileName || require('path').basename(filePath);
+    const actualFileName = fileName || basename(filePath);
     const nameValidation = SecurityValidator.validateFileName(actualFileName);
     if (!nameValidation.isValid) {
       throw new GraphApiError(nameValidation.error!, 'File name validation');

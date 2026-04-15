@@ -123,6 +123,53 @@ test('list_files handler returns centralized MCP contract on success', async () 
   assert.equal(payload.items[0].name, 'Report.xlsx');
 });
 
+test('upload_file handler returns centralized MCP contract on success', async () => {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'upload-file-success-'));
+  const localPath = path.join(tempDir, 'report.txt');
+
+  try {
+    await import('node:fs/promises').then((fs) => fs.writeFile(localPath, 'hello world'));
+
+    __setGraphClientInstanceForTests({
+      get: async () => ({
+        success: true,
+        data: {
+          id: 'folder-123',
+          name: 'safe',
+          folder: {},
+        },
+      }),
+      uploadFile: async (_endpoint: string, _uploadPath: string, fileName: string, _options: any) => ({
+        success: true,
+        data: {
+          id: 'file-123',
+          name: fileName,
+          size: 11,
+          webUrl: 'https://contoso.sharepoint.com/report.txt',
+          lastModifiedDateTime: '2026-04-14T18:00:00.000Z',
+        },
+      }),
+      cleanup: () => {},
+    } as any);
+
+    const response = await handleUploadFile({
+      localPath,
+      remotePath: 'safe/report.txt',
+      conflictBehavior: 'rename',
+    }) as ToolEnvelope;
+    const payload = parsePayload(response);
+
+    assert.equal(response.isError, undefined);
+    assert.equal(response.content[0].type, 'text');
+    assert.equal(payload.success, true);
+    assert.equal(payload.file.id, 'file-123');
+    assert.equal(payload.file.name, 'report.txt');
+    assert.equal(payload.finalPath, 'safe/report.txt');
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('upload_file handler preserves JSON error envelope via centralized helper', async () => {
   __setGraphClientInstanceForTests({
     get: async () => {
