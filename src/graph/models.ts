@@ -13,15 +13,15 @@ export interface GraphError {
     target?: string;
   }>;
   innerError?: {
-    'request-id': string;
+    "request-id": string;
     date: string;
   };
 }
 
 export interface GraphResponse<T> {
-  '@odata.context'?: string;
-  '@odata.nextLink'?: string;
-  '@odata.count'?: number;
+  "@odata.context"?: string;
+  "@odata.nextLink"?: string;
+  "@odata.count"?: number;
   value?: T[];
   error?: GraphError;
 }
@@ -41,7 +41,7 @@ export interface Drive {
   id: string;
   name: string;
   description?: string;
-  driveType: 'personal' | 'business' | 'documentLibrary' | 'sharepoint';
+  driveType: "personal" | "business" | "documentLibrary" | "sharepoint";
   owner: {
     user?: User;
     group?: {
@@ -53,7 +53,7 @@ export interface Drive {
     total: number;
     used: number;
     remaining: number;
-    state: 'normal' | 'nearing' | 'critical' | 'exceeded';
+    state: "normal" | "nearing" | "critical" | "exceeded";
   };
   webUrl: string;
 }
@@ -66,7 +66,7 @@ export interface DriveItem {
   lastModifiedDateTime: string;
   webUrl: string;
   downloadUrl?: string;
-  '@microsoft.graph.downloadUrl'?: string;
+  "@microsoft.graph.downloadUrl"?: string;
   file?: {
     mimeType: string;
     hashes?: {
@@ -95,7 +95,7 @@ export interface DriveItem {
     user: User;
   };
   shared?: {
-    scope: 'anonymous' | 'organization' | 'users';
+    scope: "anonymous" | "organization" | "users";
   };
 }
 
@@ -117,8 +117,8 @@ export interface Permission {
     };
   };
   link?: {
-    type: 'view' | 'edit' | 'embed';
-    scope: 'anonymous' | 'organization' | 'users';
+    type: "view" | "edit" | "embed";
+    scope: "anonymous" | "organization" | "users";
     webUrl: string;
     application?: {
       id: string;
@@ -267,7 +267,7 @@ export interface Worksheet {
   id: string;
   name: string;
   position: number;
-  visibility: 'visible' | 'hidden' | 'veryHidden';
+  visibility: "visible" | "hidden" | "veryHidden";
   charts: WorkbookChart[];
   tables: WorkbookTable[];
   protection?: {
@@ -428,7 +428,7 @@ export interface WorkbookSession {
 
 // Search models
 export interface SearchResult {
-  '@odata.type': string;
+  "@odata.type": string;
   name: string;
   size?: number;
   lastModifiedDateTime: string;
@@ -459,7 +459,7 @@ export interface ApiError {
 // Request/Response helpers
 export interface BatchRequest {
   id: string;
-  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   url: string;
   headers?: Record<string, string>;
   body?: any;
@@ -478,7 +478,7 @@ export interface DriveQuota {
   used: number;
   remaining: number;
   deleted: number;
-  state: 'normal' | 'nearing' | 'critical' | 'exceeded';
+  state: "normal" | "nearing" | "critical" | "exceeded";
 }
 
 export interface SiteInformation {
@@ -494,14 +494,27 @@ export interface SiteInformation {
 }
 
 // Utility types
-export type FileExtension = '.xlsx' | '.docx' | '.pptx' | '.pdf' | '.txt' | '.jpg' | '.png' | string;
-export type MimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' | 
-                      'application/vnd.openxmlformats-officedocument.wordprocessingml.document' |
-                      'application/vnd.openxmlformats-officedocument.presentationml.presentation' |
-                      'application/pdf' | 'text/plain' | 'image/jpeg' | 'image/png' | string;
+export type FileExtension =
+  | ".xlsx"
+  | ".docx"
+  | ".pptx"
+  | ".pdf"
+  | ".txt"
+  | ".jpg"
+  | ".png"
+  | string;
+export type MimeType =
+  | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  | "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  | "application/pdf"
+  | "text/plain"
+  | "image/jpeg"
+  | "image/png"
+  | string;
 
-export type ShareScope = 'anonymous' | 'organization' | 'users';
-export type ShareRole = 'read' | 'write' | 'owner';
+export type ShareScope = "anonymous" | "organization" | "users";
+export type ShareRole = "read" | "write" | "owner";
 
 // Response wrapper for consistent API responses
 export interface McpResponse<T> {
@@ -511,6 +524,6 @@ export interface McpResponse<T> {
   metadata?: {
     requestId?: string;
     timestamp: string;
-    source: 'onedrive' | 'sharepoint' | 'excel';
+    source: "onedrive" | "sharepoint" | "excel";
   };
 }

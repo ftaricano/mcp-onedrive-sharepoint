@@ -69,13 +69,16 @@ export const excelOperations: Tool = {
         type: "array",
         items: {
           type: "array",
-          items: { type: "string", description: "Cell value" },
+          items: { type: "string" },
         },
-        description: "Values to write (2D array)",
+        description: "Values to write (2D array of cell values)",
       },
       formulas: {
         type: "array",
-        items: { type: "array", items: { type: "string" } },
+        items: {
+          type: "array",
+          items: { type: "string" },
+        },
         description: "Formulas to set (2D array of formula strings)",
       },
       tableName: {

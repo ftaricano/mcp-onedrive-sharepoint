@@ -2,17 +2,22 @@
  * Enhanced Microsoft Graph API client
  * Optimized for OneDrive, SharePoint, and Excel operations
  */
-import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
-import { basename } from 'node:path';
-import { getAuthInstance } from '../auth/microsoft-graph-auth.js';
-import { GraphApiError, RetryHelper } from './error-handler.js';
-import { GRAPH_BASE_URL, buildUrl } from '../config/endpoints.js';
-import { GraphResponse, WorkbookSession, McpResponse } from './models.js';
-import { metadataCache, searchCache, driveCache } from '../utils/cache-manager.js';
-import { SecurityValidator, AuditLogger } from '../utils/security-validator.js';
-import * as FormData from 'form-data';
-import { createReadStream } from 'fs';
-import { lookup } from 'mime-types';
+import axios, { AxiosInstance, AxiosResponse, AxiosError } from "axios";
+import { basename } from "node:path";
+import { getAuthInstance } from "../auth/microsoft-graph-auth.js";
+import { GraphApiError, RetryHelper } from "./error-handler.js";
+import { GRAPH_BASE_URL, buildUrl } from "../config/endpoints.js";
+import { GraphResponse, WorkbookSession, McpResponse } from "./models.js";
+import { assertGraphPayloadHasNoError } from "./contracts.js";
+import {
+  metadataCache,
+  searchCache,
+  driveCache,
+} from "../utils/cache-manager.js";
+import { SecurityValidator, AuditLogger } from "../utils/security-validator.js";
+import * as FormData from "form-data";
+import { createReadStream } from "fs";
+import { lookup } from "mime-types";
 
 export interface RequestOptions {
   timeout?: number;
@@ -22,7 +27,7 @@ export interface RequestOptions {
 }
 
 export interface UploadOptions extends RequestOptions {
-  conflictBehavior?: 'fail' | 'replace' | 'rename';
+  conflictBehavior?: "fail" | "replace" | "rename";
   onProgress?: (loaded: number, total: number) => void;
 }
 
@@ -37,9 +42,9 @@ export class GraphClient {
       baseURL: GRAPH_BASE_URL,
       timeout: 30000,
       headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      }
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
     });
 
     this.setupInterceptors();
@@ -50,7 +55,9 @@ export class GraphClient {
     this.axios.interceptors.request.use(
       async (config) => {
         // Add authentication header
-        const { getAuthInstance } = await import('../auth/microsoft-graph-auth.js');
+        const { getAuthInstance } = await import(
+          "../auth/microsoft-graph-auth.js"
+        );
         const auth = getAuthInstance();
         const token = await auth.getAccessToken();
         config.headers.Authorization = `Bearer ${token}`;
@@ -60,7 +67,7 @@ export class GraphClient {
 
         return config;
       },
-      (error) => Promise.reject(new GraphApiError(error, 'Request setup'))
+      (error) => Promise.reject(new GraphApiError(error, "Request setup")),
     );
 
     // Response interceptor for error handling
@@ -73,9 +80,11 @@ export class GraphClient {
         const context = `${error.config?.method?.toUpperCase()} ${error.config?.url}`;
         const statusCode = error.response?.status;
         const responseData = error.response?.data;
-        
-        return Promise.reject(new GraphApiError(responseData || error, context, statusCode));
-      }
+
+        return Promise.reject(
+          new GraphApiError(responseData || error, context, statusCode),
+        );
+      },
     );
   }
 
@@ -83,14 +92,16 @@ export class GraphClient {
     if (this.rateLimitDelay > 0) {
       const elapsed = Date.now() - this.lastRequestTime;
       if (elapsed < this.rateLimitDelay) {
-        await new Promise(resolve => setTimeout(resolve, this.rateLimitDelay - elapsed));
+        await new Promise((resolve) =>
+          setTimeout(resolve, this.rateLimitDelay - elapsed),
+        );
       }
     }
     this.lastRequestTime = Date.now();
   }
 
   private updateRateLimitInfo(response: AxiosResponse): void {
-    const retryAfter = response.headers['retry-after'];
+    const retryAfter = response.headers["retry-after"];
     if (retryAfter) {
       this.rateLimitDelay = parseInt(retryAfter, 10) * 1000;
     } else {
@@ -101,15 +112,15 @@ export class GraphClient {
   // Core HTTP methods with retry logic and caching
 
   async get<T>(
-    endpoint: string, 
-    params?: Record<string, any>, 
-    options: RequestOptions = {}
+    endpoint: string,
+    params?: Record<string, any>,
+    options: RequestOptions = {},
   ): Promise<McpResponse<T>> {
     // Validate OData parameters
     if (params) {
       const validation = SecurityValidator.validateODataQuery(params);
       if (!validation.isValid) {
-        throw new GraphApiError(validation.error!, 'Parameter validation');
+        throw new GraphApiError(validation.error!, "Parameter validation");
       }
     }
 
@@ -118,248 +129,293 @@ export class GraphClient {
     if (this.isCacheableRequest(endpoint)) {
       const cached = metadataCache.get(cacheKey);
       if (cached) {
-        return this.wrapResponse(cached, 'onedrive');
+        return this.wrapResponse(cached, "onedrive");
       }
     }
 
-    return this.executeWithRetry(async () => {
-      const url = buildUrl(endpoint, params, false);
-      const response = await this.axios.get<T>(url, {
-        timeout: options.timeout,
-        headers: options.headers,
-        validateStatus: options.validateStatus
-      });
-      
-      // Cache successful metadata responses
-      if (this.isCacheableRequest(endpoint) && response.data) {
-        metadataCache.set(cacheKey, response.data);
-      }
-      
-      return this.wrapResponse(response.data, 'onedrive');
-    }, `GET ${endpoint}`, options.retries);
+    return this.executeWithRetry(
+      async () => {
+        const url = buildUrl(endpoint, params, false);
+        const response = await this.axios.get<T>(url, {
+          timeout: options.timeout,
+          headers: options.headers,
+          validateStatus: options.validateStatus,
+        });
+        const responseData = assertGraphPayloadHasNoError(
+          response.data,
+          `GET ${endpoint}`,
+        );
+
+        // Cache successful metadata responses
+        if (this.isCacheableRequest(endpoint) && responseData) {
+          metadataCache.set(cacheKey, responseData);
+        }
+
+        return this.wrapResponse(responseData, "onedrive");
+      },
+      `GET ${endpoint}`,
+      options.retries,
+    );
   }
 
   async post<T>(
-    endpoint: string, 
-    data?: any, 
-    options: RequestOptions = {}
+    endpoint: string,
+    data?: any,
+    options: RequestOptions = {},
   ): Promise<McpResponse<T>> {
-    return this.executeWithRetry(async () => {
-      const url = buildUrl(endpoint, {}, false);
-      const response = await this.axios.post<T>(url, data, {
-        timeout: options.timeout,
-        headers: options.headers,
-        validateStatus: options.validateStatus
-      });
-      
-      return this.wrapResponse(response.data, 'onedrive');
-    }, `POST ${endpoint}`, options.retries);
+    return this.executeWithRetry(
+      async () => {
+        const url = buildUrl(endpoint, {}, false);
+        const response = await this.axios.post<T>(url, data, {
+          timeout: options.timeout,
+          headers: options.headers,
+          validateStatus: options.validateStatus,
+        });
+
+        return this.wrapResponse(response.data, "onedrive");
+      },
+      `POST ${endpoint}`,
+      options.retries,
+    );
   }
 
   async put<T>(
-    endpoint: string, 
-    data?: any, 
-    options: RequestOptions = {}
+    endpoint: string,
+    data?: any,
+    options: RequestOptions = {},
   ): Promise<McpResponse<T>> {
-    return this.executeWithRetry(async () => {
-      const url = buildUrl(endpoint, {}, false);
-      const response = await this.axios.put<T>(url, data, {
-        timeout: options.timeout,
-        headers: options.headers,
-        validateStatus: options.validateStatus
-      });
-      
-      return this.wrapResponse(response.data, 'onedrive');
-    }, `PUT ${endpoint}`, options.retries);
+    return this.executeWithRetry(
+      async () => {
+        const url = buildUrl(endpoint, {}, false);
+        const response = await this.axios.put<T>(url, data, {
+          timeout: options.timeout,
+          headers: options.headers,
+          validateStatus: options.validateStatus,
+        });
+
+        return this.wrapResponse(response.data, "onedrive");
+      },
+      `PUT ${endpoint}`,
+      options.retries,
+    );
   }
 
   async patch<T>(
-    endpoint: string, 
-    data?: any, 
-    options: RequestOptions = {}
+    endpoint: string,
+    data?: any,
+    options: RequestOptions = {},
   ): Promise<McpResponse<T>> {
-    return this.executeWithRetry(async () => {
-      const url = buildUrl(endpoint, {}, false);
-      const response = await this.axios.patch<T>(url, data, {
-        timeout: options.timeout,
-        headers: options.headers,
-        validateStatus: options.validateStatus
-      });
-      
-      return this.wrapResponse(response.data, 'onedrive');
-    }, `PATCH ${endpoint}`, options.retries);
+    return this.executeWithRetry(
+      async () => {
+        const url = buildUrl(endpoint, {}, false);
+        const response = await this.axios.patch<T>(url, data, {
+          timeout: options.timeout,
+          headers: options.headers,
+          validateStatus: options.validateStatus,
+        });
+
+        return this.wrapResponse(response.data, "onedrive");
+      },
+      `PATCH ${endpoint}`,
+      options.retries,
+    );
   }
 
   async delete<T>(
-    endpoint: string, 
-    options: RequestOptions = {}
+    endpoint: string,
+    options: RequestOptions = {},
   ): Promise<McpResponse<T>> {
-    return this.executeWithRetry(async () => {
-      const url = buildUrl(endpoint, {}, false);
-      const response = await this.axios.delete<T>(url, {
-        timeout: options.timeout,
-        headers: options.headers,
-        validateStatus: options.validateStatus
-      });
-      
-      return this.wrapResponse(response.data, 'onedrive');
-    }, `DELETE ${endpoint}`, options.retries);
+    return this.executeWithRetry(
+      async () => {
+        const url = buildUrl(endpoint, {}, false);
+        const response = await this.axios.delete<T>(url, {
+          timeout: options.timeout,
+          headers: options.headers,
+          validateStatus: options.validateStatus,
+        });
+
+        return this.wrapResponse(response.data, "onedrive");
+      },
+      `DELETE ${endpoint}`,
+      options.retries,
+    );
   }
 
   // Specialized methods for file operations
 
   async downloadFile(
-    endpoint: string, 
-    options: RequestOptions = {}
+    endpoint: string,
+    options: RequestOptions = {},
   ): Promise<McpResponse<Buffer>> {
-    return this.executeWithRetry(async () => {
-      const url = buildUrl(endpoint, {}, false);
-      const response = await this.axios.get(url, {
-        responseType: 'arraybuffer',
-        timeout: options.timeout || 60000,
-        headers: options.headers
-      });
-      
-      return this.wrapResponse(Buffer.from(response.data), 'onedrive');
-    }, `DOWNLOAD ${endpoint}`, options.retries);
+    return this.executeWithRetry(
+      async () => {
+        const url = buildUrl(endpoint, {}, false);
+        const response = await this.axios.get(url, {
+          responseType: "arraybuffer",
+          timeout: options.timeout || 60000,
+          headers: options.headers,
+        });
+
+        return this.wrapResponse(Buffer.from(response.data), "onedrive");
+      },
+      `DOWNLOAD ${endpoint}`,
+      options.retries,
+    );
   }
 
   async uploadFile(
     endpoint: string,
     filePath: string,
     fileName?: string,
-    options: UploadOptions = {}
+    options: UploadOptions = {},
   ): Promise<McpResponse<any>> {
-    return this.executeWithRetry(async () => {
-      const url = buildUrl(endpoint, {}, false);
-      const mimeType = lookup(filePath) || 'application/octet-stream';
-      
-      // For small files (< 4MB), use simple upload
-      const stats = await import('fs').then(fs => fs.promises.stat(filePath));
-      if (stats.size < 4 * 1024 * 1024) {
-        const fileBuffer = await import('fs').then(fs => fs.promises.readFile(filePath));
-        
-        const response = await this.axios.put(url, fileBuffer, {
-          headers: {
-            'Content-Type': mimeType,
-            ...options.headers
-          },
-          timeout: options.timeout || 60000,
-          onUploadProgress: options.onProgress ? (progress) => {
-            options.onProgress!(progress.loaded, progress.total || stats.size);
-          } : undefined
-        });
-        
-        return this.wrapResponse(response.data, 'onedrive');
-      } else {
-        // For large files, use resumable upload
-        return this.uploadLargeFile(endpoint, filePath, fileName, options);
-      }
-    }, `UPLOAD ${endpoint}`, options.retries);
+    return this.executeWithRetry(
+      async () => {
+        const url = buildUrl(endpoint, {}, false);
+        const mimeType = lookup(filePath) || "application/octet-stream";
+
+        // For small files (< 4MB), use simple upload
+        const stats = await import("fs").then((fs) =>
+          fs.promises.stat(filePath),
+        );
+        if (stats.size < 4 * 1024 * 1024) {
+          const fileBuffer = await import("fs").then((fs) =>
+            fs.promises.readFile(filePath),
+          );
+
+          const response = await this.axios.put(url, fileBuffer, {
+            headers: {
+              "Content-Type": mimeType,
+              ...options.headers,
+            },
+            timeout: options.timeout || 60000,
+            onUploadProgress: options.onProgress
+              ? (progress) => {
+                  options.onProgress!(
+                    progress.loaded,
+                    progress.total || stats.size,
+                  );
+                }
+              : undefined,
+          });
+
+          return this.wrapResponse(response.data, "onedrive");
+        } else {
+          // For large files, use resumable upload
+          return this.uploadLargeFile(endpoint, filePath, fileName, options);
+        }
+      },
+      `UPLOAD ${endpoint}`,
+      options.retries,
+    );
   }
 
   private async uploadLargeFile(
     endpoint: string,
     filePath: string,
     fileName?: string,
-    options: UploadOptions = {}
+    options: UploadOptions = {},
   ): Promise<McpResponse<any>> {
-    const stats = await import('fs').then(fs => fs.promises.stat(filePath));
+    const stats = await import("fs").then((fs) => fs.promises.stat(filePath));
     const fileSize = stats.size;
-    
+
     // Create upload session
-    const sessionUrl = endpoint + '/createUploadSession';
+    const sessionUrl = endpoint + "/createUploadSession";
     const sessionData = {
       item: {
-        '@microsoft.graph.conflictBehavior': options.conflictBehavior || 'rename',
-        name: fileName || basename(filePath)
-      }
+        "@microsoft.graph.conflictBehavior":
+          options.conflictBehavior || "rename",
+        name: fileName || basename(filePath),
+      },
     };
-    
+
     const sessionResponse = await this.post<any>(sessionUrl, sessionData);
     if (!sessionResponse.success || !sessionResponse.data?.uploadUrl) {
-      throw new GraphApiError('Failed to create upload session');
+      throw new GraphApiError("Failed to create upload session");
     }
-    
+
     const uploadUrl = sessionResponse.data.uploadUrl;
     const chunkSize = 320 * 1024; // 320KB chunks
-    
+
     // Upload file in chunks
-    const fs = await import('fs');
+    const fs = await import("fs");
     const fileStream = fs.createReadStream(filePath);
     let uploadedBytes = 0;
-    
+
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
       let currentChunk = Buffer.alloc(0);
-      
-      fileStream.on('data', (chunk: string | Buffer) => {
+
+      fileStream.on("data", (chunk: string | Buffer) => {
         const bufferChunk = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
         currentChunk = Buffer.concat([currentChunk, bufferChunk]);
-        
+
         while (currentChunk.length >= chunkSize) {
           const toUpload = currentChunk.slice(0, chunkSize);
           chunks.push(toUpload);
           currentChunk = currentChunk.slice(chunkSize);
         }
       });
-      
-      fileStream.on('end', async () => {
+
+      fileStream.on("end", async () => {
         if (currentChunk.length > 0) {
           chunks.push(currentChunk);
         }
-        
+
         try {
           let result: any;
           for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i];
             const start = uploadedBytes;
             const end = uploadedBytes + chunk.length - 1;
-            
+
             const chunkResponse = await axios.put(uploadUrl, chunk, {
               headers: {
-                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-                'Content-Length': chunk.length.toString()
+                "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+                "Content-Length": chunk.length.toString(),
               },
-              timeout: options.timeout || 60000
+              timeout: options.timeout || 60000,
             });
-            
+
             uploadedBytes += chunk.length;
-            
+
             if (options.onProgress) {
               options.onProgress(uploadedBytes, fileSize);
             }
-            
+
             if (chunkResponse.status === 201 || chunkResponse.status === 200) {
               result = chunkResponse.data;
               break;
             }
           }
-          
-          resolve(this.wrapResponse(result, 'onedrive'));
+
+          resolve(this.wrapResponse(result, "onedrive"));
         } catch (error) {
-          reject(new GraphApiError(error, 'Large file upload'));
+          reject(new GraphApiError(error, "Large file upload"));
         }
       });
-      
-      fileStream.on('error', (error) => {
-        reject(new GraphApiError(error, 'File read error'));
+
+      fileStream.on("error", (error) => {
+        reject(new GraphApiError(error, "File read error"));
       });
     });
   }
 
   // Excel session management
 
-  async createExcelSession(itemId: string, persistChanges = true): Promise<string> {
+  async createExcelSession(
+    itemId: string,
+    persistChanges = true,
+  ): Promise<string> {
     const cacheKey = `${itemId}-${persistChanges}`;
-    
+
     if (this.sessionCache.has(cacheKey)) {
       return this.sessionCache.get(cacheKey)!.id;
     }
 
     const response = await this.post<WorkbookSession>(
       `/me/drive/items/${itemId}/workbook/createSession`,
-      { persistChanges }
+      { persistChanges },
     );
 
     if (response.success && response.data) {
@@ -367,13 +423,13 @@ export class GraphClient {
       return response.data.id;
     }
 
-    throw new GraphApiError('Failed to create Excel session');
+    throw new GraphApiError("Failed to create Excel session");
   }
 
   async closeExcelSession(itemId: string, sessionId?: string): Promise<void> {
     if (sessionId) {
       await this.post(`/me/drive/items/${itemId}/workbook/closeSession`, {
-        sessionId
+        sessionId,
       });
     }
 
@@ -387,30 +443,32 @@ export class GraphClient {
 
   // Batch requests for efficiency
 
-  async batch(requests: Array<{
-    id: string;
-    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-    url: string;
-    body?: any;
-    headers?: Record<string, string>;
-  }>): Promise<McpResponse<any[]>> {
+  async batch(
+    requests: Array<{
+      id: string;
+      method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+      url: string;
+      body?: any;
+      headers?: Record<string, string>;
+    }>,
+  ): Promise<McpResponse<any[]>> {
     const batchData = {
-      requests: requests.map(req => ({
+      requests: requests.map((req) => ({
         id: req.id,
         method: req.method,
-        url: req.url.startsWith('/') ? req.url : `/${req.url}`,
+        url: req.url.startsWith("/") ? req.url : `/${req.url}`,
         body: req.body,
-        headers: req.headers
-      }))
+        headers: req.headers,
+      })),
     };
 
-    const response = await this.post<any>('/$batch', batchData);
-    
+    const response = await this.post<any>("/$batch", batchData);
+
     if (response.success && response.data?.responses) {
-      return this.wrapResponse(response.data.responses, 'onedrive');
+      return this.wrapResponse(response.data.responses, "onedrive");
     }
 
-    throw new GraphApiError('Batch request failed');
+    throw new GraphApiError("Batch request failed");
   }
 
   // Pagination helper
@@ -418,28 +476,38 @@ export class GraphClient {
   async getAllPages<T>(
     endpoint: string,
     params?: Record<string, any>,
-    options: RequestOptions = {}
+    options: RequestOptions = {},
   ): Promise<McpResponse<T[]>> {
     const allItems: T[] = [];
     let nextLink: string | undefined = buildUrl(endpoint, params, false);
 
     while (nextLink) {
-      const response = await this.executeWithRetry(async () => {
-        const axiosResponse = await this.axios.get<GraphResponse<T>>(nextLink!, {
-          timeout: options.timeout,
-          headers: options.headers
-        });
-        return axiosResponse.data;
-      }, `GET PAGINATED ${endpoint}`, options.retries);
+      const response = assertGraphPayloadHasNoError(
+        await this.executeWithRetry(
+          async () => {
+            const axiosResponse = await this.axios.get<GraphResponse<T>>(
+              nextLink!,
+              {
+                timeout: options.timeout,
+                headers: options.headers,
+              },
+            );
+            return axiosResponse.data;
+          },
+          `GET PAGINATED ${endpoint}`,
+          options.retries,
+        ),
+        `GET PAGINATED ${endpoint}`,
+      );
 
       if (response.value) {
         allItems.push(...response.value);
       }
 
-      nextLink = response['@odata.nextLink'];
+      nextLink = response["@odata.nextLink"];
     }
 
-    return this.wrapResponse(allItems, 'onedrive');
+    return this.wrapResponse(allItems, "onedrive");
   }
 
   // Utility methods
@@ -447,27 +515,32 @@ export class GraphClient {
   private async executeWithRetry<T>(
     operation: () => Promise<T>,
     context: string,
-    maxRetries = 3
+    maxRetries = 3,
   ): Promise<T> {
     return RetryHelper.withRetry(operation, context, maxRetries);
   }
 
   private wrapResponse<T>(
-    data: T, 
-    source: 'onedrive' | 'sharepoint' | 'excel' = 'onedrive'
+    data: T,
+    source: "onedrive" | "sharepoint" | "excel" = "onedrive",
   ): McpResponse<T> {
+    const validatedData = assertGraphPayloadHasNoError(data);
+
     return {
       success: true,
-      data,
+      data: validatedData,
       metadata: {
         timestamp: new Date().toISOString(),
-        source
-      }
+        source,
+      },
     };
   }
 
-  private generateCacheKey(endpoint: string, params?: Record<string, any>): string {
-    const paramStr = params ? JSON.stringify(params) : '';
+  private generateCacheKey(
+    endpoint: string,
+    params?: Record<string, any>,
+  ): string {
+    const paramStr = params ? JSON.stringify(params) : "";
     return `${endpoint}:${paramStr}`;
   }
 
@@ -481,7 +554,7 @@ export class GraphClient {
       /\/metadata$/,
       /\/lists$/,
       /\/columns$/,
-      /\/items\/[^\/]+$/
+      /\/items\/[^\/]+$/,
     ];
 
     const nonCacheablePatterns = [
@@ -489,32 +562,32 @@ export class GraphClient {
       /\/thumbnails$/,
       /\/preview$/,
       /\/download$/,
-      /\/createUploadSession$/
+      /\/createUploadSession$/,
     ];
 
     // Don't cache if it's a non-cacheable pattern
-    if (nonCacheablePatterns.some(pattern => pattern.test(endpoint))) {
+    if (nonCacheablePatterns.some((pattern) => pattern.test(endpoint))) {
       return false;
     }
 
     // Cache if it matches cacheable patterns
-    return cacheablePatterns.some(pattern => pattern.test(endpoint));
+    return cacheablePatterns.some((pattern) => pattern.test(endpoint));
   }
 
   // Enhanced file operations with security validation
-  
+
   async validateAndDownloadFile(
-    endpoint: string, 
-    options: RequestOptions = {}
+    endpoint: string,
+    options: RequestOptions = {},
   ): Promise<McpResponse<Buffer>> {
     // Validate the endpoint doesn't contain path traversal
     const validation = SecurityValidator.validatePath(endpoint);
     if (!validation.isValid) {
-      throw new GraphApiError(validation.error!, 'Path validation');
+      throw new GraphApiError(validation.error!, "Path validation");
     }
 
     const user = await this.getCurrentUserSafe();
-    AuditLogger.log('file_download', user, endpoint, 'success');
+    AuditLogger.log("file_download", user, endpoint, "success");
 
     return this.downloadFile(endpoint, options);
   }
@@ -523,49 +596,55 @@ export class GraphClient {
     endpoint: string,
     filePath: string,
     fileName?: string,
-    options: UploadOptions = {}
+    options: UploadOptions = {},
   ): Promise<McpResponse<any>> {
     // Validate file path
     const pathValidation = SecurityValidator.validatePath(endpoint);
     if (!pathValidation.isValid) {
-      throw new GraphApiError(pathValidation.error!, 'Path validation');
+      throw new GraphApiError(pathValidation.error!, "Path validation");
     }
 
     // Validate file name
     const actualFileName = fileName || basename(filePath);
     const nameValidation = SecurityValidator.validateFileName(actualFileName);
     if (!nameValidation.isValid) {
-      throw new GraphApiError(nameValidation.error!, 'File name validation');
+      throw new GraphApiError(nameValidation.error!, "File name validation");
     }
 
     // Validate file size
-    const stats = await import('fs').then(fs => fs.promises.stat(filePath));
+    const stats = await import("fs").then((fs) => fs.promises.stat(filePath));
     const sizeValidation = SecurityValidator.validateFileSize(stats.size);
     if (!sizeValidation.isValid) {
-      throw new GraphApiError(sizeValidation.error!, 'File size validation');
+      throw new GraphApiError(sizeValidation.error!, "File size validation");
     }
 
     const user = await this.getCurrentUserSafe();
-    AuditLogger.log('file_upload', user, `${endpoint}/${actualFileName}`, 'success', {
-      size: stats.size,
-      fileName: actualFileName
-    });
+    AuditLogger.log(
+      "file_upload",
+      user,
+      `${endpoint}/${actualFileName}`,
+      "success",
+      {
+        size: stats.size,
+        fileName: actualFileName,
+      },
+    );
 
     return this.uploadFile(endpoint, filePath, actualFileName, options);
   }
 
   // Enhanced search with caching
-  
+
   async searchWithCache<T>(
     endpoint: string,
     query: string,
     params?: Record<string, any>,
-    options: RequestOptions = {}
+    options: RequestOptions = {},
   ): Promise<McpResponse<T[]>> {
     // Validate search query
     const validation = SecurityValidator.validateSearchQuery(query);
     if (!validation.isValid) {
-      throw new GraphApiError(validation.error!, 'Search query validation');
+      throw new GraphApiError(validation.error!, "Search query validation");
     }
 
     // Check cache
@@ -573,43 +652,51 @@ export class GraphClient {
     const cached = searchCache.get(cacheKey);
     if (cached) {
       const user = await this.getCurrentUserSafe();
-      AuditLogger.log('search', user, validation.sanitized!, 'success', { cached: true });
-      return this.wrapResponse(cached, 'onedrive');
+      AuditLogger.log("search", user, validation.sanitized!, "success", {
+        cached: true,
+      });
+      return this.wrapResponse(cached, "onedrive");
     }
 
     // Execute search
     const searchParams = { ...params, q: validation.sanitized };
-    const result = await this.get<{ value: T[] }>(endpoint, searchParams, options);
-    
+    const result = await this.get<{ value: T[] }>(
+      endpoint,
+      searchParams,
+      options,
+    );
+
     if (result.success && result.data?.value) {
       // Cache successful search results
       searchCache.set(cacheKey, result.data.value);
-      
+
       const user = await this.getCurrentUserSafe();
-      AuditLogger.log('search', user, validation.sanitized!, 'success', { 
+      AuditLogger.log("search", user, validation.sanitized!, "success", {
         resultCount: result.data.value.length,
-        cached: false
+        cached: false,
       });
-      
-      return this.wrapResponse(result.data.value, 'onedrive');
+
+      return this.wrapResponse(result.data.value, "onedrive");
     }
 
-    throw new GraphApiError('Search returned no results', 'Search operation');
+    throw new GraphApiError("Search returned no results", "Search operation");
   }
 
   private async getCurrentUserSafe(): Promise<string> {
     try {
-      const { getAuthInstance } = await import('../auth/microsoft-graph-auth.js');
+      const { getAuthInstance } = await import(
+        "../auth/microsoft-graph-auth.js"
+      );
       const auth = getAuthInstance();
       const user = await auth.getCurrentUser();
-      return user?.username || 'unknown';
+      return user?.username || "unknown";
     } catch {
-      return 'unknown';
+      return "unknown";
     }
   }
 
   // Cache management methods
-  
+
   clearCaches(): void {
     metadataCache.clear();
     searchCache.clear();
@@ -620,7 +707,7 @@ export class GraphClient {
     return {
       metadata: metadataCache.getStats(),
       search: searchCache.getStats(),
-      drive: driveCache.getStats()
+      drive: driveCache.getStats(),
     };
   }
 
@@ -628,24 +715,24 @@ export class GraphClient {
 
   async healthCheck(): Promise<McpResponse<{ status: string; user: any }>> {
     try {
-      const response = await this.get<any>('/me');
-      
+      const response = await this.get<any>("/me");
+
       if (response.success) {
         return this.wrapResponse({
-          status: 'healthy',
-          user: response.data
+          status: "healthy",
+          user: response.data,
         });
       }
-      
-      throw new GraphApiError('Health check failed');
+
+      throw new GraphApiError("Health check failed");
     } catch (error) {
       return {
         success: false,
-        error: error instanceof GraphApiError ? error.message : 'Unknown error',
+        error: error instanceof GraphApiError ? error.message : "Unknown error",
         metadata: {
           timestamp: new Date().toISOString(),
-          source: 'onedrive'
-        }
+          source: "onedrive",
+        },
       };
     }
   }
@@ -656,20 +743,20 @@ export class GraphClient {
     // Close all Excel sessions
     for (const [key, session] of this.sessionCache.entries()) {
       try {
-        const itemId = key.split('-')[0];
+        const itemId = key.split("-")[0];
         await this.closeExcelSession(itemId, session.id);
       } catch (error) {
         console.warn(`Failed to close Excel session ${session.id}:`, error);
       }
     }
-    
+
     this.sessionCache.clear();
-    
+
     // Clear all caches
     this.clearCaches();
-    
+
     // Cleanup cache managers
-    const { cleanupAllCaches } = await import('../utils/cache-manager.js');
+    const { cleanupAllCaches } = await import("../utils/cache-manager.js");
     cleanupAllCaches();
   }
 }
@@ -691,6 +778,8 @@ export function resetGraphClient(): void {
   }
 }
 
-export function __setGraphClientInstanceForTests(client: GraphClient | null): void {
+export function __setGraphClientInstanceForTests(
+  client: GraphClient | null,
+): void {
   clientInstance = client;
 }

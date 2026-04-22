@@ -1,13 +1,25 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, utimesSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import * as path from 'node:path';
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+  utimesSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import * as path from "node:path";
 
 export type ToolEnvelope = {
   content: Array<{ type: string; text: string }>;
   isError?: boolean;
 };
 
-type MockMethod = 'get' | 'post' | 'patch' | 'delete' | 'uploadFile' | 'downloadFile';
+type MockMethod =
+  | "get"
+  | "post"
+  | "patch"
+  | "delete"
+  | "uploadFile"
+  | "downloadFile";
 
 type MockHandlers = Partial<Record<MockMethod, (...args: any[]) => any>>;
 
@@ -33,12 +45,12 @@ export function createMockGraphClient(handlers: MockHandlers = {}) {
   return {
     calls,
     client: {
-      get: makeMethod('get'),
-      post: makeMethod('post'),
-      patch: makeMethod('patch'),
-      delete: makeMethod('delete'),
-      uploadFile: makeMethod('uploadFile'),
-      downloadFile: makeMethod('downloadFile'),
+      get: makeMethod("get"),
+      post: makeMethod("post"),
+      patch: makeMethod("patch"),
+      delete: makeMethod("delete"),
+      uploadFile: makeMethod("uploadFile"),
+      downloadFile: makeMethod("downloadFile"),
       cleanup: () => {},
     },
     methodCalls(method: MockMethod) {
@@ -55,7 +67,11 @@ export function cleanupTempDir(dirPath: string): void {
   rmSync(dirPath, { recursive: true, force: true });
 }
 
-export function writeFileWithMtime(filePath: string, contents: string | Buffer, mtime: Date): void {
+export function writeFileWithMtime(
+  filePath: string,
+  contents: string | Buffer,
+  mtime: Date,
+): void {
   mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileSync(filePath, contents);
   utimesSync(filePath, mtime, mtime);

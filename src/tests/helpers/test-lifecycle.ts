@@ -1,7 +1,7 @@
-import { after, afterEach } from 'node:test';
+import { after, afterEach } from "node:test";
 
-import { __setGraphClientInstanceForTests } from '../../graph/client.js';
-import { cleanupAllCaches } from '../../utils/cache-manager.js';
+import { __setGraphClientInstanceForTests } from "../../graph/client.js";
+import { cleanupAllCaches } from "../../utils/cache-manager.js";
 
 export function registerGraphClientTestLifecycle(): void {
   afterEach(() => {

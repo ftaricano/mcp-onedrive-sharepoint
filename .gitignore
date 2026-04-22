@@ -33,3 +33,9 @@ coverage/
 tokens.json
 credentials.json
 .outlook-mcp-tokens.json
+
+# Tenant-specific site registry (copy config/sites.example.json to this path)
+config/sites.local.json
+
+# Private operational docs (tenant-internal, never committed)
+docs/cpz-operations.md

@@ -10,10 +10,10 @@ export interface DriveItemTarget extends DriveTarget {
 
 function normalizePathSegment(path?: string): string {
   if (!path) {
-    return '';
+    return "";
   }
 
-  return path.trim().replace(/^\/+/, '').replace(/\/+$/, '');
+  return path.trim().replace(/^\/+/, "").replace(/\/+$/, "");
 }
 
 export function getDriveRootEndpoint(target: DriveTarget): string {
@@ -25,10 +25,12 @@ export function getDriveRootEndpoint(target: DriveTarget): string {
     return `/sites/${target.siteId}/drive`;
   }
 
-  return '/me/drive';
+  return "/me/drive";
 }
 
-export function buildDriveChildrenEndpoint(target: DriveTarget & { path?: string }): string {
+export function buildDriveChildrenEndpoint(
+  target: DriveTarget & { path?: string },
+): string {
   const base = getDriveRootEndpoint(target);
   const normalizedPath = normalizePathSegment(target.path);
 
@@ -39,7 +41,10 @@ export function buildDriveChildrenEndpoint(target: DriveTarget & { path?: string
   return `${base}/root:/${normalizedPath}:/children`;
 }
 
-export function buildDriveItemEndpoint(target: DriveItemTarget, suffix = ''): string {
+export function buildDriveItemEndpoint(
+  target: DriveItemTarget,
+  suffix = "",
+): string {
   const base = getDriveRootEndpoint(target);
 
   if (target.itemId) {
@@ -49,13 +54,16 @@ export function buildDriveItemEndpoint(target: DriveItemTarget, suffix = ''): st
   const normalizedPath = normalizePathSegment(target.itemPath);
 
   if (!normalizedPath) {
-    throw new Error('Either itemId or itemPath must be provided');
+    throw new Error("Either itemId or itemPath must be provided");
   }
 
   return `${base}/root:/${normalizedPath}:${suffix}`;
 }
 
-export function buildDriveSearchEndpoint(target: DriveTarget, query: string): string {
+export function buildDriveSearchEndpoint(
+  target: DriveTarget,
+  query: string,
+): string {
   const base = getDriveRootEndpoint(target);
   return `${base}/root/search(q='${encodeURIComponent(query)}')`;
 }
@@ -69,5 +77,5 @@ export function describeDriveTarget(target: DriveTarget): string {
     return `site:${target.siteId}`;
   }
 
-  return 'me';
+  return "me";
 }

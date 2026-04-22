@@ -24,13 +24,13 @@ export class CacheManager<T = any> {
   private stats = {
     hits: 0,
     misses: 0,
-    evictions: 0
+    evictions: 0,
   };
 
   constructor(options: CacheOptions = {}) {
     this.maxSize = options.maxSize || 100;
     this.defaultTTL = options.defaultTTL || 300000; // 5 minutes default
-    
+
     if (options.cleanupInterval !== 0) {
       this.startCleanup(options.cleanupInterval || 60000); // 1 minute default
     }
@@ -41,7 +41,7 @@ export class CacheManager<T = any> {
    */
   get(key: string): T | null {
     const entry = this.cache.get(key);
-    
+
     if (!entry) {
       this.stats.misses++;
       return null;
@@ -55,11 +55,11 @@ export class CacheManager<T = any> {
 
     entry.hits++;
     this.stats.hits++;
-    
+
     // Move to end (LRU)
     this.cache.delete(key);
     this.cache.set(key, entry);
-    
+
     return entry.data;
   }
 
@@ -76,7 +76,7 @@ export class CacheManager<T = any> {
       data,
       timestamp: Date.now(),
       ttl: ttl || this.defaultTTL,
-      hits: 0
+      hits: 0,
     };
 
     this.cache.set(key, entry);
@@ -88,12 +88,12 @@ export class CacheManager<T = any> {
   has(key: string): boolean {
     const entry = this.cache.get(key);
     if (!entry) return false;
-    
+
     if (this.isExpired(entry)) {
       this.cache.delete(key);
       return false;
     }
-    
+
     return true;
   }
 
@@ -116,15 +116,16 @@ export class CacheManager<T = any> {
    * Get cache statistics
    */
   getStats() {
-    const hitRate = this.stats.hits + this.stats.misses > 0
-      ? (this.stats.hits / (this.stats.hits + this.stats.misses)) * 100
-      : 0;
+    const hitRate =
+      this.stats.hits + this.stats.misses > 0
+        ? (this.stats.hits / (this.stats.hits + this.stats.misses)) * 100
+        : 0;
 
     return {
       ...this.stats,
       size: this.cache.size,
       maxSize: this.maxSize,
-      hitRate: `${hitRate.toFixed(2)}%`
+      hitRate: `${hitRate.toFixed(2)}%`,
     };
   }
 
@@ -141,7 +142,7 @@ export class CacheManager<T = any> {
       }
     }
 
-    toDelete.forEach(key => this.cache.delete(key));
+    toDelete.forEach((key) => this.cache.delete(key));
   }
 
   /**
@@ -183,11 +184,11 @@ export class MetadataCache extends CacheManager<any> {
     super({
       maxSize: 500,
       defaultTTL: 600000, // 10 minutes
-      cleanupInterval: 120000 // 2 minutes
+      cleanupInterval: 120000, // 2 minutes
     });
   }
 
-  generateKey(itemId: string, type: string = 'metadata'): string {
+  generateKey(itemId: string, type: string = "metadata"): string {
     return `${type}:${itemId}`;
   }
 }
@@ -197,12 +198,12 @@ export class SearchCache extends CacheManager<any[]> {
     super({
       maxSize: 50,
       defaultTTL: 180000, // 3 minutes
-      cleanupInterval: 60000 // 1 minute
+      cleanupInterval: 60000, // 1 minute
     });
   }
 
   generateKey(query: string, filters?: Record<string, any>): string {
-    const filterStr = filters ? JSON.stringify(filters) : '';
+    const filterStr = filters ? JSON.stringify(filters) : "";
     return `search:${query}:${filterStr}`;
   }
 }
@@ -212,7 +213,7 @@ export class DriveCache extends CacheManager<any> {
     super({
       maxSize: 100,
       defaultTTL: 900000, // 15 minutes
-      cleanupInterval: 300000 // 5 minutes
+      cleanupInterval: 300000, // 5 minutes
     });
   }
 
