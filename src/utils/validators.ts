@@ -3,8 +3,8 @@
  * Enhanced validation for all tool inputs
  */
 
-import * as path from 'path';
-import * as fs from 'fs';
+import * as path from "path";
+import * as fs from "fs";
 
 /**
  * Validates and sanitizes file paths
@@ -13,39 +13,64 @@ export class PathValidator {
   private static readonly INVALID_CHARS = /[<>:"|?*]/g;
   private static readonly MAX_PATH_LENGTH = 255;
   private static readonly RESERVED_NAMES = [
-    'CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4',
-    'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 'LPT3',
-    'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
   ];
 
   /**
    * Validates a remote path for OneDrive/SharePoint
    */
-  static validateRemotePath(remotePath: string): { valid: boolean; sanitized: string; errors: string[] } {
+  static validateRemotePath(remotePath: string): {
+    valid: boolean;
+    sanitized: string;
+    errors: string[];
+  } {
     const errors: string[] = [];
     let sanitized = remotePath;
 
     // Remove leading/trailing slashes
-    sanitized = sanitized.replace(/^\/+|\/+$/g, '');
+    sanitized = sanitized.replace(/^\/+|\/+$/g, "");
 
     // Check for invalid characters
     if (this.INVALID_CHARS.test(sanitized)) {
-      errors.push('Path contains invalid characters');
-      sanitized = sanitized.replace(this.INVALID_CHARS, '_');
+      errors.push("Path contains invalid characters");
+      sanitized = sanitized.replace(this.INVALID_CHARS, "_");
     }
 
     // Check path length
     if (sanitized.length > this.MAX_PATH_LENGTH) {
-      errors.push(`Path exceeds maximum length of ${this.MAX_PATH_LENGTH} characters`);
+      errors.push(
+        `Path exceeds maximum length of ${this.MAX_PATH_LENGTH} characters`,
+      );
       sanitized = sanitized.substring(0, this.MAX_PATH_LENGTH);
     }
 
     // Check for reserved names
-    const segments = sanitized.split('/');
+    const segments = sanitized.split("/");
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
       const upperSegment = segment.toUpperCase();
-      
+
       if (this.RESERVED_NAMES.includes(upperSegment)) {
         errors.push(`Path contains reserved name: ${segment}`);
         segments[i] = `_${segment}`;
@@ -53,37 +78,41 @@ export class PathValidator {
 
       // Check for empty segments
       if (!segment && i < segments.length - 1) {
-        errors.push('Path contains empty segments');
+        errors.push("Path contains empty segments");
       }
     }
 
-    sanitized = segments.filter(s => s).join('/');
+    sanitized = segments.filter((s) => s).join("/");
 
     return {
       valid: errors.length === 0,
       sanitized,
-      errors
+      errors,
     };
   }
 
   /**
    * Validates a local file path
    */
-  static validateLocalPath(localPath: string): { valid: boolean; absolute: string; errors: string[] } {
+  static validateLocalPath(localPath: string): {
+    valid: boolean;
+    absolute: string;
+    errors: string[];
+  } {
     const errors: string[] = [];
-    
+
     // Convert to absolute path
     const absolute = path.resolve(localPath);
 
     // Check if path exists
     if (!fs.existsSync(absolute)) {
-      errors.push('Path does not exist');
+      errors.push("Path does not exist");
     }
 
     // Check for path traversal attempts
     const normalized = path.normalize(absolute);
     if (normalized !== absolute) {
-      errors.push('Path contains traversal attempts');
+      errors.push("Path contains traversal attempts");
     }
 
     // Check if file is readable (for files)
@@ -91,14 +120,14 @@ export class PathValidator {
       try {
         fs.accessSync(absolute, fs.constants.R_OK);
       } catch {
-        errors.push('File is not readable');
+        errors.push("File is not readable");
       }
     }
 
     return {
       valid: errors.length === 0,
       absolute,
-      errors
+      errors,
     };
   }
 }
@@ -121,27 +150,31 @@ export class SharePointValidator {
    */
   static validateListId(listId: string): boolean {
     // List IDs are GUIDs
-    const guidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+    const guidPattern =
+      /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
     return guidPattern.test(listId);
   }
 
   /**
    * Validates OData filter expressions
    */
-  static validateODataFilter(filter: string): { valid: boolean; errors: string[] } {
+  static validateODataFilter(filter: string): {
+    valid: boolean;
+    errors: string[];
+  } {
     const errors: string[] = [];
-    
+
     // Check for SQL injection patterns
     const dangerousPatterns = [
       /;\s*(drop|delete|truncate|alter|create|insert|update)\s+/i,
       /union\s+select/i,
       /exec\s*\(/i,
-      /xp_cmdshell/i
+      /xp_cmdshell/i,
     ];
 
     for (const pattern of dangerousPatterns) {
       if (pattern.test(filter)) {
-        errors.push('Filter contains potentially dangerous patterns');
+        errors.push("Filter contains potentially dangerous patterns");
         break;
       }
     }
@@ -149,22 +182,36 @@ export class SharePointValidator {
     // Check for balanced parentheses
     let parenCount = 0;
     for (const char of filter) {
-      if (char === '(') parenCount++;
-      if (char === ')') parenCount--;
+      if (char === "(") parenCount++;
+      if (char === ")") parenCount--;
       if (parenCount < 0) {
-        errors.push('Unbalanced parentheses in filter');
+        errors.push("Unbalanced parentheses in filter");
         break;
       }
     }
     if (parenCount !== 0) {
-      errors.push('Unbalanced parentheses in filter');
+      errors.push("Unbalanced parentheses in filter");
     }
 
     // Check for valid OData operators
-    const validOperators = ['eq', 'ne', 'gt', 'ge', 'lt', 'le', 'and', 'or', 'not', 'contains', 'startswith', 'endswith'];
-    const operatorPattern = /\b(eq|ne|gt|ge|lt|le|and|or|not|contains|startswith|endswith)\b/gi;
+    const validOperators = [
+      "eq",
+      "ne",
+      "gt",
+      "ge",
+      "lt",
+      "le",
+      "and",
+      "or",
+      "not",
+      "contains",
+      "startswith",
+      "endswith",
+    ];
+    const operatorPattern =
+      /\b(eq|ne|gt|ge|lt|le|and|or|not|contains|startswith|endswith)\b/gi;
     const usedOperators = filter.match(operatorPattern) || [];
-    
+
     for (const op of usedOperators) {
       if (!validOperators.includes(op.toLowerCase())) {
         errors.push(`Invalid OData operator: ${op}`);
@@ -173,7 +220,7 @@ export class SharePointValidator {
 
     return {
       valid: errors.length === 0,
-      errors
+      errors,
     };
   }
 }
@@ -185,32 +232,36 @@ export class ExcelValidator {
   /**
    * Validates an Excel range address
    */
-  static validateRange(range: string): { valid: boolean; normalized: string; errors: string[] } {
+  static validateRange(range: string): {
+    valid: boolean;
+    normalized: string;
+    errors: string[];
+  } {
     const errors: string[] = [];
     let normalized = range.toUpperCase().trim();
 
     // Basic range pattern: A1 or A1:B10
     const rangePattern = /^[A-Z]+\d+(:[A-Z]+\d+)?$/;
-    
+
     if (!rangePattern.test(normalized)) {
-      errors.push('Invalid Excel range format');
+      errors.push("Invalid Excel range format");
     }
 
     // Check for reasonable bounds
-    const parts = normalized.split(':');
+    const parts = normalized.split(":");
     for (const part of parts) {
       const colMatch = part.match(/^([A-Z]+)/);
       const rowMatch = part.match(/(\d+)$/);
-      
+
       if (colMatch && rowMatch) {
         const col = colMatch[1];
         const row = parseInt(rowMatch[1]);
-        
+
         // Excel max column is XFD (16384)
         if (col.length > 3 || this.columnToNumber(col) > 16384) {
           errors.push(`Column ${col} exceeds Excel limits`);
         }
-        
+
         // Excel max row is 1048576
         if (row > 1048576 || row < 1) {
           errors.push(`Row ${row} exceeds Excel limits`);
@@ -221,7 +272,7 @@ export class ExcelValidator {
     return {
       valid: errors.length === 0,
       normalized,
-      errors
+      errors,
     };
   }
 
@@ -239,7 +290,11 @@ export class ExcelValidator {
   /**
    * Validates worksheet name
    */
-  static validateWorksheetName(name: string): { valid: boolean; sanitized: string; errors: string[] } {
+  static validateWorksheetName(name: string): {
+    valid: boolean;
+    sanitized: string;
+    errors: string[];
+  } {
     const errors: string[] = [];
     let sanitized = name;
 
@@ -248,8 +303,8 @@ export class ExcelValidator {
     const maxLength = 31;
 
     if (invalidChars.test(sanitized)) {
-      errors.push('Worksheet name contains invalid characters');
-      sanitized = sanitized.replace(invalidChars, '_');
+      errors.push("Worksheet name contains invalid characters");
+      sanitized = sanitized.replace(invalidChars, "_");
     }
 
     if (sanitized.length > maxLength) {
@@ -258,14 +313,14 @@ export class ExcelValidator {
     }
 
     if (!sanitized) {
-      errors.push('Worksheet name cannot be empty');
-      sanitized = 'Sheet1';
+      errors.push("Worksheet name cannot be empty");
+      sanitized = "Sheet1";
     }
 
     return {
       valid: errors.length === 0,
       sanitized,
-      errors
+      errors,
     };
   }
 
@@ -276,12 +331,12 @@ export class ExcelValidator {
     const errors: string[] = [];
 
     if (!Array.isArray(values)) {
-      errors.push('Values must be an array');
+      errors.push("Values must be an array");
       return { valid: false, errors };
     }
 
     if (values.length === 0) {
-      errors.push('Values array cannot be empty');
+      errors.push("Values array cannot be empty");
       return { valid: false, errors };
     }
 
@@ -299,14 +354,14 @@ export class ExcelValidator {
     for (let i = 0; i < values.length; i++) {
       for (let j = 0; j < values[i]?.length; j++) {
         const value = values[i][j];
-        
+
         // Check string length (Excel limit is 32767 characters)
-        if (typeof value === 'string' && value.length > 32767) {
+        if (typeof value === "string" && value.length > 32767) {
           errors.push(`Cell [${i},${j}] exceeds Excel string limit`);
         }
-        
+
         // Check number range
-        if (typeof value === 'number') {
+        if (typeof value === "number") {
           if (!isFinite(value)) {
             errors.push(`Cell [${i},${j}] contains invalid number`);
           }
@@ -316,7 +371,7 @@ export class ExcelValidator {
 
     return {
       valid: errors.length === 0,
-      errors
+      errors,
     };
   }
 }
@@ -336,9 +391,12 @@ export class EmailValidator {
   /**
    * Validates multiple email addresses
    */
-  static validateEmails(emails: string[]): { valid: boolean; invalid: string[] } {
+  static validateEmails(emails: string[]): {
+    valid: boolean;
+    invalid: string[];
+  } {
     const invalid: string[] = [];
-    
+
     for (const email of emails) {
       if (!this.validateEmail(email)) {
         invalid.push(email);
@@ -347,7 +405,7 @@ export class EmailValidator {
 
     return {
       valid: invalid.length === 0,
-      invalid
+      invalid,
     };
   }
 }
@@ -359,56 +417,67 @@ export class FileOperationValidator {
   /**
    * Validates file size for upload
    */
-  static validateFileSize(filePath: string, maxSizeMB: number = 250): { valid: boolean; size: number; errors: string[] } {
+  static validateFileSize(
+    filePath: string,
+    maxSizeMB: number = 250,
+  ): { valid: boolean; size: number; errors: string[] } {
     const errors: string[] = [];
     let size = 0;
 
     try {
       const stats = fs.statSync(filePath);
       size = stats.size;
-      
+
       const sizeMB = size / (1024 * 1024);
       if (sizeMB > maxSizeMB) {
-        errors.push(`File size ${sizeMB.toFixed(2)}MB exceeds maximum of ${maxSizeMB}MB`);
+        errors.push(
+          `File size ${sizeMB.toFixed(2)}MB exceeds maximum of ${maxSizeMB}MB`,
+        );
       }
     } catch (error) {
-      errors.push('Cannot read file size');
+      errors.push("Cannot read file size");
     }
 
     return {
       valid: errors.length === 0,
       size,
-      errors
+      errors,
     };
   }
 
   /**
    * Validates MIME type
    */
-  static validateMimeType(filePath: string, allowedTypes?: string[]): { valid: boolean; mimeType: string; errors: string[] } {
+  static validateMimeType(
+    filePath: string,
+    allowedTypes?: string[],
+  ): { valid: boolean; mimeType: string; errors: string[] } {
     const errors: string[] = [];
     const ext = path.extname(filePath).toLowerCase();
-    
+
     // Basic MIME type mapping
     const mimeTypes: Record<string, string> = {
-      '.txt': 'text/plain',
-      '.pdf': 'application/pdf',
-      '.doc': 'application/msword',
-      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      '.xls': 'application/vnd.ms-excel',
-      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      '.ppt': 'application/vnd.ms-powerpoint',
-      '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.png': 'image/png',
-      '.gif': 'image/gif',
-      '.zip': 'application/zip',
-      '.json': 'application/json',
-      '.xml': 'application/xml'
+      ".txt": "text/plain",
+      ".pdf": "application/pdf",
+      ".doc": "application/msword",
+      ".docx":
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ".xls": "application/vnd.ms-excel",
+      ".xlsx":
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ".ppt": "application/vnd.ms-powerpoint",
+      ".pptx":
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".png": "image/png",
+      ".gif": "image/gif",
+      ".zip": "application/zip",
+      ".json": "application/json",
+      ".xml": "application/xml",
     };
 
-    const mimeType = mimeTypes[ext] || 'application/octet-stream';
+    const mimeType = mimeTypes[ext] || "application/octet-stream";
 
     if (allowedTypes && allowedTypes.length > 0) {
       if (!allowedTypes.includes(mimeType)) {
@@ -419,7 +488,7 @@ export class FileOperationValidator {
     return {
       valid: errors.length === 0,
       mimeType,
-      errors
+      errors,
     };
   }
 }
@@ -433,11 +502,11 @@ export class InputSanitizer {
    */
   static sanitizeString(input: string, maxLength: number = 1000): string {
     // Remove control characters except tabs and newlines
-    let sanitized = input.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
-    
+    let sanitized = input.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+
     // Truncate if too long
     if (sanitized.length > maxLength) {
-      sanitized = sanitized.substring(0, maxLength) + '...';
+      sanitized = sanitized.substring(0, maxLength) + "...";
     }
 
     return sanitized;
@@ -446,31 +515,37 @@ export class InputSanitizer {
   /**
    * Sanitizes an object for safe JSON serialization
    */
-  static sanitizeObject(obj: any, maxDepth: number = 10, currentDepth: number = 0): any {
+  static sanitizeObject(
+    obj: any,
+    maxDepth: number = 10,
+    currentDepth: number = 0,
+  ): any {
     if (currentDepth >= maxDepth) {
-      return '[Max depth reached]';
+      return "[Max depth reached]";
     }
 
     if (obj === null || obj === undefined) {
       return obj;
     }
 
-    if (typeof obj !== 'object') {
-      if (typeof obj === 'string') {
+    if (typeof obj !== "object") {
+      if (typeof obj === "string") {
         return this.sanitizeString(obj);
       }
       return obj;
     }
 
     if (Array.isArray(obj)) {
-      return obj.map(item => this.sanitizeObject(item, maxDepth, currentDepth + 1));
+      return obj.map((item) =>
+        this.sanitizeObject(item, maxDepth, currentDepth + 1),
+      );
     }
 
     const sanitized: any = {};
     for (const [key, value] of Object.entries(obj)) {
       // Skip circular references
       if (value === obj) {
-        sanitized[key] = '[Circular reference]';
+        sanitized[key] = "[Circular reference]";
       } else {
         sanitized[key] = this.sanitizeObject(value, maxDepth, currentDepth + 1);
       }

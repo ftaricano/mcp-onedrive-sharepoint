@@ -1,0 +1,13 @@
+{
+  "_comment": "Copy this file to config/sites.local.json and fill in your tenant-specific values. sites.local.json is gitignored. Set MCP_SITES_CONFIG_PATH to override the location.",
+  "sites": [
+    {
+      "key": "example-docs",
+      "name": "Example Docs Site",
+      "siteId": "yourtenant.sharepoint.com,00000000-0000-0000-0000-000000000000,11111111-1111-1111-1111-111111111111",
+      "siteUrl": "https://yourtenant.sharepoint.com/sites/ExampleDocs",
+      "driveId": "b!EXAMPLE_DRIVE_ID_REPLACE_ME",
+      "aliases": ["example", "docs", "example-docs", "/sites/ExampleDocs"]
+    }
+  ]
+}
