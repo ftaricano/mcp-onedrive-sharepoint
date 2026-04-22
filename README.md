@@ -1,8 +1,14 @@
 # MCP OneDrive/SharePoint Server
 
-MCP server for Microsoft Graph focused on OneDrive, SharePoint and related document workflows.
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/node-%E2%89%A518-brightgreen.svg)](https://nodejs.org)
+[![MCP](https://img.shields.io/badge/MCP-compatible-8A2BE2.svg)](https://modelcontextprotocol.io)
+[![TypeScript](https://img.shields.io/badge/typescript-%5E5.3-3178c6.svg)](https://www.typescriptlang.org)
 
-This repository now has working onboarding and quality commands on a clean clone:
+MCP server for Microsoft Graph focused on OneDrive, SharePoint and related document workflows. Delegated device-code auth, 32 tools, also usable as a standalone `ods` CLI for shell scripting.
+
+Onboarding commands on a clean clone:
+
 - `npm run build`
 - `npm run lint`
 - `npm test`
@@ -38,7 +44,7 @@ This version includes real structural improvements instead of documentation-only
 ## Installation
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/ftaricano/mcp-onedrive-sharepoint.git
 cd mcp-onedrive-sharepoint
 npm install
 cp .env.example .env
@@ -166,15 +172,34 @@ This is the current foundation for moving beyond a `/me/drive`-only model.
 }
 ```
 
-## Quality status
+## Troubleshooting
 
-Validated locally after these changes:
-- `npm run build` ✅
-- `npm run lint` ✅
-- `npm test` ✅
+- `invalid_grant` / `AADSTS` on first run: token store is empty or expired. Run `npm run setup-auth` again.
+- `403 Forbidden` on SharePoint lists/drives: the signed-in user lacks permission to the target site. Check with the site owner.
+- `404` on a `driveId` or `siteId`: the identifier is stale or the resource was deleted. Use `list_drives` / `discover_sites` to re-discover.
+- Build fails on a clean clone: make sure Node.js is 18+ and run `npm install` before `npm run build`.
+
+## Security
+
+This server handles Microsoft Graph OAuth tokens and delegated access to corporate file storage. Treat it accordingly:
+
+- `.env`, `tokens.json`, `credentials.json` and the OS keychain entries are **never** committed — see [.gitignore](.gitignore).
+- Report security issues privately via [GitHub security advisories](https://github.com/ftaricano/mcp-onedrive-sharepoint/security/advisories/new) — do not open a public issue.
+- If a token leaks, revoke it from [Azure AD → Enterprise Applications → your app → Users & groups](https://portal.azure.com) and re-run `npm run setup-auth`.
+
+## Contributing
+
+Issues and PRs welcome. Before opening a PR:
+
+- `npm run ci` passes (build + lint + tests)
+- one focused change per PR
+- no credentials, tenant-specific ids, or internal paths in commits or README
+
+## License
+
+[MIT](LICENSE) © Fernando Taricano
 
 ## Current limitations
 
-- authentication still depends on real Microsoft Graph credentials and an interactive device-code login
-- only the most critical listing/search foundations were migrated to the new pagination/resource helpers in this pass; other tools still use older direct endpoint construction
-- advanced tools exist, but this PR focuses on onboarding, contract clarity and foundation hardening rather than a full architectural rewrite
+- authentication depends on real Microsoft Graph credentials and an interactive device-code login
+- only the most critical listing/search flows use the pagination/resource helpers; other tools still use direct endpoint construction
