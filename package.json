@@ -7,12 +7,15 @@
   "scripts": {
     "build": "tsc --pretty false",
     "dev": "tsx src/index.ts",
+    "cli": "tsx src/cli.ts",
     "start": "node build/index.js",
+    "stdio": "./scripts/run-stdio.sh",
+    "spcall": "./scripts/spcall.sh",
     "setup-auth": "tsx src/auth/setup-auth.ts",
     "test": "npm run build && node --test build/tests/*.test.js",
     "lint": "eslint . --ext .ts",
     "ci": "npm run build && npm run lint && npm test",
-    "format": "prettier --write \"src/**/*.ts\" README.md .env.example"
+    "format": "prettier --write \"src/**/*.ts\" README.md docs/**/*.md scripts/*.mjs"
   },
   "keywords": ["mcp", "onedrive", "sharepoint", "microsoft-graph"],
   "author": "",
@@ -38,6 +41,9 @@
     "typescript": "^5.3.3"
   },
   "bin": {
-    "mcp-onedrive-sharepoint": "./build/index.js"
+    "mcp-onedrive-sharepoint": "./build/index.js",
+    "ods": "./build/cli.js",
+    "sharepoint-mcp-stdio": "./scripts/run-stdio.sh",
+    "spcall": "./scripts/spcall.sh"
   }
 }

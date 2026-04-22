@@ -18,6 +18,7 @@ Onboarding commands on a clean clone:
 ## What is implemented
 
 The server exposes 32 MCP tools grouped into:
+
 - Files: `list_files`, `download_file`, `upload_file`, `create_folder`, `move_item`, `delete_item`, `search_files`, `get_file_metadata`, `share_item`, `copy_item`
 - SharePoint: `discover_sites`, `list_site_lists`, `get_list_schema`, `list_items`, `get_list_item`, `create_list_item`, `update_list_item`, `delete_list_item`
 - Utilities: `health_check`, `get_user_profile`, `list_drives`, `global_search`, `batch_operations`
@@ -26,6 +27,7 @@ The server exposes 32 MCP tools grouped into:
 ## Recent foundation improvements
 
 This version includes real structural improvements instead of documentation-only changes:
+
 - fixed `npm run setup-auth` to call the real TypeScript auth setup flow
 - added working ESLint configuration
 - added executable tests with Node's built-in test runner
@@ -50,6 +52,65 @@ npm install
 cp .env.example .env
 ```
 
+## Operational wrappers
+
+Important operational rule:
+- use this MCP on demand
+- do not keep it permanently bound/loaded in Hermes or Claude Code when not needed
+- prefer one-shot `spcall` / `mcporter --stdio` execution so the process exits right after the call and does not accumulate zombie or idle MCP processes
+- the `spcall` wrapper includes post-call cleanup for stray repo-local MCP child processes
+
+
+This repo includes lightweight wrappers for local operational use:
+
+- `./scripts/run-stdio.sh`: start the MCP stdio server with the repo-local `.env` loaded safely
+- `./scripts/spcall.sh`: run ad-hoc `mcporter` calls against the local MCP server
+- `npm run stdio`: same as `./scripts/run-stdio.sh`
+- `npm run spcall -- <tool> ...`: same as `./scripts/spcall.sh <tool> ...`
+
+Quick examples:
+
+```bash
+npm run build
+./scripts/spcall.sh health_check
+./scripts/spcall.sh list_drives
+./scripts/spcall.sh list_files driveId=b!abc123 path=/Shared%20Documents
+```
+
+Tenant-specific site aliases and drive ids are loaded from a local file — see [Site registry](#site-registry) below.
+
+## CLI (`ods`)
+
+Every MCP tool is also exposed as a plain subcommand through the `ods` CLI. It shares the same auth, config and handlers as the MCP server, so anything the MCP does is one-shot runnable from a terminal or a shell script.
+
+```bash
+npm run build
+ods list                                  # list all tools with descriptions
+ods schema list_files                     # print JSON schema for a tool
+ods auth                                  # interactive device-code login
+ods <tool> --key=value [--key value]      # invoke a tool with CLI flags
+ods <tool> --json '{"k":"v"}'             # pass the full payload as JSON
+```
+
+During development you can skip the build with `npm run cli -- <tool> ...`.
+
+### Examples
+
+```bash
+ods health_check
+ods list_files --site=primary --path=/
+ods list_files --driveId=b!abc --path=/Shared%20Documents --limit=50
+ods upload_file --json '{"driveId":"b!abc","path":"/x.txt","content":"hello"}'
+```
+
+### Rules for flags
+
+- `--key=value` and `--key value` are both accepted.
+- `true` / `false` / `null` and numeric strings are coerced automatically; anything else stays a string.
+- Bare flags (no value, or followed by another flag) become `true`.
+- `--json '<payload>'` takes a JSON object; individual `--key=value` flags layered on top override fields from the payload. Use this for tools with nested objects/arrays (e.g. advanced Excel tools).
+- Output is the raw tool payload (usually pretty-printed JSON). If the handler returns an error envelope, the process exits with code `2`.
+
 ## Configuration
 
 The server reads the following environment variables:
@@ -66,6 +127,7 @@ MICROSOFT_GRAPH_CACHE_TTL=3600
 ```
 
 Notes:
+
 - use `MICROSOFT_GRAPH_TENANT_ID=common` for multi-tenant/device-code onboarding
 - use a specific tenant id if you want tenant-scoped sign-in
 - delegated scopes are what the current auth flow uses
@@ -79,6 +141,7 @@ npm run setup-auth
 ```
 
 The script:
+
 - reads `MICROSOFT_GRAPH_CLIENT_ID` / `MICROSOFT_GRAPH_TENANT_ID` from `.env` when present
 - prompts for missing values
 - starts Microsoft device-code login
@@ -92,6 +155,8 @@ npm run lint
 npm test
 npm run ci
 npm start
+npm run stdio
+npm run spcall -- health_check
 ```
 
 `npm run ci` is the local verification entrypoint and is also what GitHub Actions runs on every PR/push.
@@ -106,6 +171,7 @@ It does not discover or synthesize a personal OneDrive site.
 ### Pagination
 
 The following tools now expose consistent pagination metadata in their JSON payloads:
+
 - `list_files`
 - `search_files`
 - `discover_sites`
@@ -113,6 +179,7 @@ The following tools now expose consistent pagination metadata in their JSON payl
 - `list_items`
 
 When Microsoft Graph returns `@odata.nextLink`, the response includes:
+
 - `pagination.returned`
 - `pagination.limit`
 - `pagination.totalCount` when available
@@ -124,11 +191,47 @@ Pass `pageToken` back to the same tool to continue paging.
 ### Drive/site targeting
 
 Core file listing/search/download flows now accept:
+
 - `siteId` for a SharePoint site's default drive
 - `driveId` for a specific document library or drive
 - path-based addressing where supported
 
 This is the current foundation for moving beyond a `/me/drive`-only model.
+
+## Site registry
+
+The resolver can target named SharePoint sites by alias (e.g. `site=primary`). The registry is loaded from an external JSON file so no tenant-specific ids are committed:
+
+- Copy `config/sites.example.json` to `config/sites.local.json` (gitignored) and fill in your values.
+- Or set `MCP_SITES_CONFIG_PATH` to point at a different JSON file.
+- If the file is missing, the registry stays empty and the tools only accept explicit `siteId`, `siteUrl`, or `driveId`.
+
+Each site entry looks like:
+
+```json
+{
+  "key": "primary",
+  "name": "Primary",
+  "siteId": "yourtenant.sharepoint.com,<guid>,<guid>",
+  "siteUrl": "https://yourtenant.sharepoint.com/sites/Primary",
+  "driveId": "b!<drive-id>",
+  "aliases": ["primary", "/sites/Primary"]
+}
+```
+
+### MCP stdio snippet
+
+Use the wrapper as the MCP command so the repo-local `.env` is loaded automatically:
+
+```json
+{
+  "mcpServers": {
+    "sharepoint": {
+      "command": "/absolute/path/to/mcp-onedrive-sharepoint/scripts/run-stdio.sh"
+    }
+  }
+}
+```
 
 ## Example tool inputs
 
