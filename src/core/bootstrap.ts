@@ -40,8 +40,11 @@ export function prewarmAuth(): void {
   try {
     const config = loadConfig();
     initializeAuth(config.auth);
-    getAuthInstance().prewarm();
+    const auth = getAuthInstance() as unknown as {
+      prewarm?: () => void;
+    };
+    if (typeof auth.prewarm === "function") auth.prewarm();
   } catch {
-    // Config missing — surfaces on first tool call with a clear error.
+    // Config missing or auth not yet primed — surfaces on first tool call.
   }
 }
