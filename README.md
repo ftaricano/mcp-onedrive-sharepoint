@@ -277,7 +277,6 @@ Use the wrapper as the MCP command so the repo-local `.env` is loaded automatica
 
 ## Troubleshooting
 
-<<<<<<< HEAD
 - `invalid_grant` / `AADSTS` on first run: token store is empty or expired. Run `npm run setup-auth` again.
 - `403 Forbidden` on SharePoint lists/drives: the signed-in user lacks permission to the target site. Check with the site owner.
 - `404` on a `driveId` or `siteId`: the identifier is stale or the resource was deleted. Use `list_drives` / `discover_sites` to re-discover.
@@ -302,13 +301,6 @@ Issues and PRs welcome. Before opening a PR:
 ## License
 
 [MIT](LICENSE) © Fernando Taricano
-=======
-Validated locally after these changes:
-
-- `npm run build` ✅
-- `npm run lint` ✅
-- `npm test` ✅
->>>>>>> af68d7d (feat(cli): add ods CLI adapter reusing MCP handlers)
 
 ## Current limitations
 
