@@ -10,8 +10,17 @@ import {
   ICachePlugin,
   PublicClientApplication,
 } from "@azure/msal-node";
-import keytar from "keytar";
+import { createRequire } from "node:module";
 import { DEFAULT_SCOPES } from "../config/scopes.js";
+
+const lazyRequire = createRequire(import.meta.url);
+let cachedKeytar: SecureStore | null = null;
+function getDefaultKeychain(): SecureStore {
+  if (!cachedKeytar) {
+    cachedKeytar = lazyRequire("keytar") as SecureStore;
+  }
+  return cachedKeytar;
+}
 
 export interface AuthConfig {
   clientId: string;
@@ -87,7 +96,7 @@ export class MicrosoftGraphAuth {
       ...config,
     };
 
-    this.keychain = dependencies.keychain ?? keytar;
+    this.keychain = dependencies.keychain ?? getDefaultKeychain();
     this.pca =
       dependencies.pca ??
       new PublicClientApplication({
