@@ -20,20 +20,50 @@ export class GraphApiError extends Error {
     context?: string,
     statusCode?: number,
   ) {
-    const message = GraphApiError.extractMessage(error);
+    const axiosLike = GraphApiError.extractAxiosErrorInfo(error);
+    // Prefer an explicit statusCode, then whatever an AxiosError carried.
+    const effectiveStatus = statusCode ?? axiosLike?.status;
+    // Prefer the Graph error payload (has proper code/message) over the
+    // generic axios message. This is what Graph returns inside response.data.
+    const source = axiosLike?.payload ?? error;
+
+    const message = GraphApiError.extractMessage(source);
     super(message);
 
     this.name = "GraphApiError";
-    this.code = GraphApiError.extractCode(error);
-    this.statusCode = statusCode;
+    this.code = GraphApiError.extractCode(source, axiosLike?.networkCode);
+    this.statusCode = effectiveStatus;
     this.context = context;
     this.originalError = error;
 
-    const errorInfo = GraphApiError.categorizeError(this.code, statusCode);
+    const errorInfo = GraphApiError.categorizeError(this.code, effectiveStatus);
     this.category = errorInfo.category;
     this.severity = errorInfo.severity;
     this.isRetryable = errorInfo.isRetryable;
     this.suggestedAction = errorInfo.suggestedAction;
+  }
+
+  /**
+   * Recognize an AxiosError-shaped object without taking a hard dep on axios.
+   * Returns the HTTP status (if any), the Graph error payload from
+   * `response.data` (if any), and the low-level node network code (e.g.
+   * `ECONNRESET`) for connection failures where there is no HTTP response.
+   */
+  private static extractAxiosErrorInfo(
+    error: unknown,
+  ): { status?: number; payload?: unknown; networkCode?: string } | undefined {
+    if (!error || typeof error !== "object") return undefined;
+    const anyErr = error as {
+      isAxiosError?: boolean;
+      response?: { status?: number; data?: unknown };
+      code?: string;
+    };
+    if (!anyErr.isAxiosError) return undefined;
+    return {
+      status: anyErr.response?.status,
+      payload: anyErr.response?.data,
+      networkCode: anyErr.response ? undefined : anyErr.code,
+    };
   }
 
   static extractMessage(error: any): string {
@@ -44,10 +74,11 @@ export class GraphApiError extends Error {
     return "Unknown Microsoft Graph API error";
   }
 
-  static extractCode(error: any): string {
+  static extractCode(error: any, fallbackNetworkCode?: string): string {
     if (typeof error?.error?.code === "string") return error.error.code;
     if (typeof error?.code === "string") return error.code;
     if (typeof error?.error === "string") return error.error;
+    if (fallbackNetworkCode) return fallbackNetworkCode;
     return "UnknownError";
   }
 
@@ -335,6 +366,16 @@ const NETWORK_ERRORS = [
   "DNSError",
   "ConnectionRefused",
   "ConnectionTimeout",
+  // Node network errors propagated by axios when there is no HTTP response.
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ECONNABORTED",
+  "ETIMEDOUT",
+  "EAI_AGAIN",
+  "ENOTFOUND",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "EPIPE",
 ];
 
 // Retry logic helper

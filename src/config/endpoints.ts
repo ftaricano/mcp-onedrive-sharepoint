@@ -27,7 +27,6 @@ export const ENDPOINTS = {
     DRIVE_ITEM: "/me/drive/items/{itemId}",
     DRIVE_ITEM_CONTENT: "/me/drive/items/{itemId}/content",
     DRIVE_ITEM_CHILDREN: "/me/drive/items/{itemId}/children",
-    DRIVE_SEARCH: "/me/drive/root/search(q='{query}')",
     DRIVE_UPLOAD_SESSION: "/me/drive/items/{itemId}/createUploadSession",
     DRIVE_PERMISSIONS: "/me/drive/items/{itemId}/permissions",
 
@@ -46,7 +45,6 @@ export const ENDPOINTS = {
     LIST_ITEMS: "/sites/{siteId}/lists/{listId}/items",
     LIST_ITEM: "/sites/{siteId}/lists/{listId}/items/{itemId}",
     LIST_COLUMNS: "/sites/{siteId}/lists/{listId}/columns",
-    SITE_SEARCH: "/sites/{siteId}/search(q='{query}')",
     ROOT_SITE: "/sites/root",
   },
 
@@ -73,13 +71,6 @@ export const ENDPOINTS = {
     // SharePoint Excel files
     SITE_WORKBOOK: "/sites/{siteId}/drive/items/{itemId}/workbook",
     SITE_WORKSHEETS: "/sites/{siteId}/drive/items/{itemId}/workbook/worksheets",
-  },
-
-  // Search
-  SEARCH: {
-    GLOBAL: "/search/query",
-    DRIVE_SEARCH: "/me/drive/root/search(q='{query}')",
-    SITE_SEARCH: "/sites/{siteId}/drive/root/search(q='{query}')",
   },
 } as const;
 

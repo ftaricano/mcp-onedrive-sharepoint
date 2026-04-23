@@ -534,14 +534,12 @@ export class GraphClient {
     const allItems: T[] = [];
     let nextLink: string | undefined = buildUrl(endpoint, params, false);
     let pageCount = 0;
+    let truncationReason: "maxItems" | "maxPages" | undefined;
 
-    while (nextLink) {
+    pageLoop: while (nextLink) {
       if (pageCount >= maxPages) {
-        throw new GraphApiError(
-          `Pagination page cap reached (${maxPages}) for ${endpoint}. ` +
-            `Increase maxPages explicitly if you really need more.`,
-          `GET PAGINATED ${endpoint}`,
-        );
+        truncationReason = "maxPages";
+        break;
       }
 
       const response = assertGraphPayloadHasNoError(
@@ -567,11 +565,10 @@ export class GraphClient {
       if (response.value) {
         for (const item of response.value) {
           if (allItems.length >= maxItems) {
-            throw new GraphApiError(
-              `Pagination item cap reached (${maxItems}) for ${endpoint}. ` +
-                `Increase maxItems explicitly or use a narrower filter.`,
-              `GET PAGINATED ${endpoint}`,
-            );
+            truncationReason = "maxItems";
+            // Preserve the current nextLink so callers can resume.
+            nextLink = response["@odata.nextLink"] ?? nextLink;
+            break pageLoop;
           }
           allItems.push(item);
         }
@@ -580,7 +577,15 @@ export class GraphClient {
       nextLink = response["@odata.nextLink"];
     }
 
-    return this.wrapResponse(allItems, "onedrive");
+    const wrapped = this.wrapResponse(allItems, "onedrive");
+    if (truncationReason && wrapped.metadata) {
+      wrapped.metadata.truncated = true;
+      wrapped.metadata.truncationReason = truncationReason;
+      if (nextLink) {
+        wrapped.metadata.nextPageToken = nextLink;
+      }
+    }
+    return wrapped;
   }
 
   // Utility methods
