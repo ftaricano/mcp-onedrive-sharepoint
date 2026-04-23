@@ -44,7 +44,10 @@ export function prewarmAuth(): void {
       prewarm?: () => void;
     };
     if (typeof auth.prewarm === "function") auth.prewarm();
-  } catch {
-    // Config missing or auth not yet primed — surfaces on first tool call.
+  } catch (err) {
+    // Non-fatal: bootstrap() will raise the real failure on first tool call.
+    // Still log so missing config / broken keychain does not vanish.
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[prewarmAuth] skipped: ${message}`);
   }
 }

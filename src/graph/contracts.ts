@@ -1,6 +1,20 @@
 import { GraphResponse } from "./models.js";
 import { GraphApiError, createUserFriendlyError } from "./error-handler.js";
 
+export interface ToolErrorPayload {
+  summary: string;
+  error: {
+    code: string;
+    category: string;
+    message: string;
+    retryable: boolean;
+    severity: string;
+    statusCode?: number;
+    context?: string;
+    suggestedAction?: string;
+  };
+}
+
 export interface PaginationInfo {
   limit?: number;
   returned: number;
@@ -82,12 +96,31 @@ export function toolErrorResponse(
   isError: true;
 } {
   const suffix = context ? ` (${context})` : "";
+  const friendly = createUserFriendlyError(error, context);
+  const summary = `Error in ${toolName}${suffix}: ${friendly}`;
+
+  const graphError =
+    error instanceof GraphApiError ? error : new GraphApiError(error, context);
+
+  const payload: ToolErrorPayload = {
+    summary,
+    error: {
+      code: graphError.code,
+      category: graphError.category,
+      message: graphError.message,
+      retryable: graphError.isRetryable,
+      severity: graphError.severity,
+      statusCode: graphError.statusCode,
+      context: graphError.context ?? context,
+      suggestedAction: graphError.suggestedAction,
+    },
+  };
 
   return {
     content: [
       {
         type: "text",
-        text: `Error in ${toolName}${suffix}: ${createUserFriendlyError(error, context)}`,
+        text: JSON.stringify(payload, null, 2),
       },
     ],
     isError: true,

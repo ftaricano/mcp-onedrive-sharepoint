@@ -707,8 +707,8 @@ export async function handleExcelAnalysis(args: any) {
           let textCells = 0;
           let formulaCells = 0;
 
-          for (let row of values) {
-            for (let cell of row) {
+          for (const row of values) {
+            for (const cell of row) {
               if (cell === null || cell === "") {
                 emptyCells++;
               } else if (typeof cell === "number") {
@@ -721,8 +721,8 @@ export async function handleExcelAnalysis(args: any) {
 
           // Check formulas
           const formulas = usedRange.formulas || [];
-          for (let row of formulas) {
-            for (let formula of row) {
+          for (const row of formulas) {
+            for (const formula of row) {
               if (formula && formula.startsWith("=")) {
                 formulaCells++;
               }

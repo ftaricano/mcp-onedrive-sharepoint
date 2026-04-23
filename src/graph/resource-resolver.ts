@@ -60,12 +60,24 @@ export function buildDriveItemEndpoint(
   return `${base}/root:/${normalizedPath}:${suffix}`;
 }
 
+/**
+ * OData function parameters delimited by single quotes require the single
+ * quote itself to be doubled to escape it (OData ABNF `quoted-string`).
+ * `encodeURIComponent` alone does not help because Graph URL-decodes the
+ * value before OData parsing — a `%27` becomes `'` and terminates the
+ * string, allowing query corruption / injection.
+ */
+function escapeODataString(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
 export function buildDriveSearchEndpoint(
   target: DriveTarget,
   query: string,
 ): string {
   const base = getDriveRootEndpoint(target);
-  return `${base}/root/search(q='${encodeURIComponent(query)}')`;
+  const escaped = encodeURIComponent(escapeODataString(query));
+  return `${base}/root/search(q='${escaped}')`;
 }
 
 export function describeDriveTarget(target: DriveTarget): string {

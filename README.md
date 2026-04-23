@@ -5,7 +5,7 @@
 [![MCP](https://img.shields.io/badge/MCP-compatible-8A2BE2.svg)](https://modelcontextprotocol.io)
 [![TypeScript](https://img.shields.io/badge/typescript-%5E5.3-3178c6.svg)](https://www.typescriptlang.org)
 
-MCP server for Microsoft Graph focused on OneDrive, SharePoint and related document workflows. Delegated device-code auth, 32 tools, also usable as a standalone `ods` CLI for shell scripting.
+MCP server for Microsoft Graph focused on OneDrive, SharePoint and related document workflows. Delegated device-code auth, 33 tools, also usable as a standalone `ods` CLI for shell scripting.
 
 Onboarding commands on a clean clone:
 
@@ -17,7 +17,7 @@ Onboarding commands on a clean clone:
 
 ## What is implemented
 
-The server exposes 32 MCP tools grouped into:
+The server exposes 33 MCP tools grouped into:
 
 - Files: `list_files`, `download_file`, `upload_file`, `create_folder`, `move_item`, `delete_item`, `search_files`, `get_file_metadata`, `share_item`, `copy_item`
 - SharePoint: `discover_sites`, `list_site_lists`, `get_list_schema`, `list_items`, `get_list_item`, `create_list_item`, `update_list_item`, `delete_list_item`

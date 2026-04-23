@@ -31,6 +31,20 @@ export interface UploadOptions extends RequestOptions {
   onProgress?: (loaded: number, total: number) => void;
 }
 
+export interface PaginationOptions extends RequestOptions {
+  /**
+   * Hard cap on items returned across all pages. Defaults to 10_000 so a
+   * misconfigured caller cannot OOM the process on very large drives.
+   * Pass `Infinity` explicitly to opt out (not recommended).
+   */
+  maxItems?: number;
+  /** Hard cap on page fetches. Defaults to 1_000. */
+  maxPages?: number;
+}
+
+export const DEFAULT_MAX_PAGINATION_ITEMS = 10_000;
+export const DEFAULT_MAX_PAGINATION_PAGES = 1_000;
+
 export class GraphClient {
   private axios: AxiosInstance;
   private sessionCache: Map<string, WorkbookSession> = new Map();
@@ -337,9 +351,37 @@ export class GraphClient {
     const uploadUrl = sessionResponse.data.uploadUrl;
     const chunkSize = 320 * 1024; // 320KB chunks
 
-    // Upload file in chunks
     const fs = await import("fs");
     const fileStream = fs.createReadStream(filePath);
+
+    // Safety net: if the outer promise rejects for any reason, make sure the
+    // read stream is destroyed so we do not leak a file descriptor.
+    const cleanup = () => {
+      if (!fileStream.destroyed) {
+        fileStream.destroy();
+      }
+    };
+
+    try {
+      return await this.uploadChunksFromStream(
+        fileStream,
+        uploadUrl,
+        fileSize,
+        chunkSize,
+        options,
+      );
+    } finally {
+      cleanup();
+    }
+  }
+
+  private uploadChunksFromStream(
+    fileStream: NodeJS.ReadableStream,
+    uploadUrl: string,
+    fileSize: number,
+    chunkSize: number,
+    options: UploadOptions,
+  ): Promise<McpResponse<any>> {
     let uploadedBytes = 0;
 
     return new Promise((resolve, reject) => {
@@ -369,13 +411,21 @@ export class GraphClient {
             const start = uploadedBytes;
             const end = uploadedBytes + chunk.length - 1;
 
-            const chunkResponse = await axios.put(uploadUrl, chunk, {
-              headers: {
-                "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-                "Content-Length": chunk.length.toString(),
-              },
-              timeout: options.timeout || 60000,
-            });
+            // Route the chunk PUT through executeWithRetry so 429 / transient
+            // failures honour the same retry + retry-after policy used by the
+            // rest of the client (bare axios.put previously ignored throttling).
+            const chunkResponse = await this.executeWithRetry(
+              () =>
+                axios.put(uploadUrl, chunk, {
+                  headers: {
+                    "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+                    "Content-Length": chunk.length.toString(),
+                  },
+                  timeout: options.timeout || 60000,
+                }),
+              `UPLOAD CHUNK ${start}-${end}`,
+              options.retries,
+            );
 
             uploadedBytes += chunk.length;
 
@@ -476,12 +526,24 @@ export class GraphClient {
   async getAllPages<T>(
     endpoint: string,
     params?: Record<string, any>,
-    options: RequestOptions = {},
+    options: PaginationOptions = {},
   ): Promise<McpResponse<T[]>> {
+    const maxItems = options.maxItems ?? DEFAULT_MAX_PAGINATION_ITEMS;
+    const maxPages = options.maxPages ?? DEFAULT_MAX_PAGINATION_PAGES;
+
     const allItems: T[] = [];
     let nextLink: string | undefined = buildUrl(endpoint, params, false);
+    let pageCount = 0;
 
     while (nextLink) {
+      if (pageCount >= maxPages) {
+        throw new GraphApiError(
+          `Pagination page cap reached (${maxPages}) for ${endpoint}. ` +
+            `Increase maxPages explicitly if you really need more.`,
+          `GET PAGINATED ${endpoint}`,
+        );
+      }
+
       const response = assertGraphPayloadHasNoError(
         await this.executeWithRetry(
           async () => {
@@ -500,8 +562,19 @@ export class GraphClient {
         `GET PAGINATED ${endpoint}`,
       );
 
+      pageCount++;
+
       if (response.value) {
-        allItems.push(...response.value);
+        for (const item of response.value) {
+          if (allItems.length >= maxItems) {
+            throw new GraphApiError(
+              `Pagination item cap reached (${maxItems}) for ${endpoint}. ` +
+                `Increase maxItems explicitly or use a narrower filter.`,
+              `GET PAGINATED ${endpoint}`,
+            );
+          }
+          allItems.push(item);
+        }
       }
 
       nextLink = response["@odata.nextLink"];

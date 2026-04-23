@@ -238,7 +238,7 @@ export class ExcelValidator {
     errors: string[];
   } {
     const errors: string[] = [];
-    let normalized = range.toUpperCase().trim();
+    const normalized = range.toUpperCase().trim();
 
     // Basic range pattern: A1 or A1:B10
     const rangePattern = /^[A-Z]+\d+(:[A-Z]+\d+)?$/;
