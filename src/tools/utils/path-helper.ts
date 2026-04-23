@@ -81,7 +81,7 @@ export function sanitizeFileName(name: string): string {
  */
 export function analyzePath(remotePath: string): PathInfo {
   // Remove leading/trailing slashes and normalize
-  let normalizedPath = remotePath
+  const normalizedPath = remotePath
     .replace(/^\/+|\/+$/g, "")
     .replace(/\/+/g, "/");
 
