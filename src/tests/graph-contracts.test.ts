@@ -105,6 +105,13 @@ test("resource resolver supports me, site and drive scopes", () => {
     buildDriveSearchEndpoint({ driveId: "drive-123" }, "budget 2026"),
     "/drives/drive-123/root/search(q='budget%202026')",
   );
+  // OData strings escape `'` by doubling it. `encodeURIComponent` leaves
+  // `'` untouched (RFC 3986 unreserved per spec), so the doubled quotes
+  // reach Graph as literal `''` and are parsed as an escaped single quote.
+  assert.equal(
+    buildDriveSearchEndpoint({ driveId: "drive-123" }, "can't break"),
+    "/drives/drive-123/root/search(q='can''t%20break')",
+  );
   assert.equal(describeDriveTarget({}), "me");
   assert.equal(describeDriveTarget({ siteId: "site-123" }), "site:site-123");
   assert.equal(
@@ -126,8 +133,32 @@ test("JSON and error envelopes are MCP-compatible text responses", () => {
     }),
   );
   assert.equal(error.isError, true);
+  // First block: friendly summary text (backward-compat with plain-text readers).
+  assert.equal(error.content.length, 2);
   assert.match(error.content[0].text, /Error in list_files/);
   assert.match(error.content[0].text, /Authentication Error/);
+
+  // Second block: structured JSON so callers (LLMs) can decide retry vs bail.
+  const parsed = JSON.parse(error.content[1].text);
+  assert.equal(parsed.error.category, "Authentication");
+  assert.equal(parsed.error.code, "InvalidAuthenticationToken");
+  assert.equal(parsed.error.retryable, false);
+  assert.match(parsed.summary, /Error in list_files/);
+});
+
+test("toolErrorResponse flags throttling errors as retryable", () => {
+  const error = toolErrorResponse(
+    "list_files",
+    new GraphApiError(
+      { error: { code: "TooManyRequests", message: "slow down" } },
+      undefined,
+      429,
+    ),
+  );
+  const parsed = JSON.parse(error.content[1].text);
+  assert.equal(parsed.error.category, "Throttling");
+  assert.equal(parsed.error.retryable, true);
+  assert.equal(parsed.error.statusCode, 429);
 });
 
 test("GraphApiError produces actionable messages", () => {
@@ -191,4 +222,90 @@ test("GraphClient.get preserves success payloads", async () => {
 
   assert.equal(response.success, true);
   assert.deepEqual(response.data, { value: [{ id: "item-1" }] });
+});
+
+test("GraphClient.getAllPages truncates at maxItems and emits metadata", async () => {
+  const client = new GraphClient();
+
+  (client as any).axios = {
+    get: async () => ({
+      data: {
+        value: [{ id: "a" }, { id: "b" }, { id: "c" }],
+        "@odata.nextLink":
+          "https://graph.microsoft.com/v1.0/me/drive/root/children?$skiptoken=x",
+      },
+      headers: {},
+    }),
+  };
+
+  const response = await client.getAllPages<{ id: string }>(
+    "/me/drive/root/children",
+    undefined,
+    { maxItems: 2 },
+  );
+
+  assert.equal(response.success, true);
+  assert.equal(response.data?.length, 2);
+  assert.equal(response.metadata?.truncated, true);
+  assert.equal(response.metadata?.truncationReason, "maxItems");
+  assert.match(response.metadata?.nextPageToken ?? "", /skiptoken=x/);
+});
+
+test("GraphClient.getAllPages truncates at maxPages and emits metadata", async () => {
+  const client = new GraphClient();
+
+  (client as any).axios = {
+    get: async () => ({
+      data: {
+        value: [{ id: "a" }],
+        "@odata.nextLink":
+          "https://graph.microsoft.com/v1.0/me/drive/root/children?$skiptoken=x",
+      },
+      headers: {},
+    }),
+  };
+
+  const response = await client.getAllPages<{ id: string }>(
+    "/me/drive/root/children",
+    undefined,
+    { maxPages: 2 },
+  );
+
+  assert.equal(response.success, true);
+  assert.equal(response.data?.length, 2);
+  assert.equal(response.metadata?.truncated, true);
+  assert.equal(response.metadata?.truncationReason, "maxPages");
+});
+
+test("GraphClient.getAllPages returns full result when within caps", async () => {
+  const client = new GraphClient();
+
+  const pages = [
+    {
+      value: [{ id: "a" }, { id: "b" }],
+      "@odata.nextLink":
+        "https://graph.microsoft.com/v1.0/me/drive/root/children?$skiptoken=p2",
+    },
+    {
+      value: [{ id: "c" }],
+    },
+  ];
+  let call = 0;
+
+  (client as any).axios = {
+    get: async () => ({
+      data: pages[call++],
+      headers: {},
+    }),
+  };
+
+  const response = await client.getAllPages<{ id: string }>(
+    "/me/drive/root/children",
+    undefined,
+    { maxItems: 100, maxPages: 10 },
+  );
+
+  assert.equal(response.success, true);
+  assert.deepEqual(response.data, [{ id: "a" }, { id: "b" }, { id: "c" }]);
+  assert.equal(call, 2);
 });
