@@ -525,5 +525,14 @@ export interface McpResponse<T> {
     requestId?: string;
     timestamp: string;
     source: "onedrive" | "sharepoint" | "excel";
+    /**
+     * When getAllPages hits a cap, it returns a partial result instead of
+     * throwing. `truncated` is true, `truncationReason` explains which cap
+     * was hit, and `nextPageToken` carries the remaining `@odata.nextLink`
+     * so callers can resume with a bigger cap or page through manually.
+     */
+    truncated?: boolean;
+    truncationReason?: "maxItems" | "maxPages";
+    nextPageToken?: string;
   };
 }

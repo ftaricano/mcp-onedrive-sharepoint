@@ -7,6 +7,7 @@ import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { getGraphClient } from "../../graph/client.js";
 import { User, Drive, Site, GraphResponse } from "../../graph/models.js";
 import { jsonTextResponse, toolErrorResponse } from "../../graph/contracts.js";
+import { escapeODataString } from "../../graph/resource-resolver.js";
 import { resolveRequiredSharePointSite } from "../../sharepoint/site-resolver.js";
 
 type UtilityDependencies = {
@@ -542,7 +543,7 @@ export async function handleGlobalSearch(args: any) {
     }
 
     // Fallback: Search in personal OneDrive
-    const fallbackEndpoint = `/me/drive/search(q='${encodeURIComponent(query)}')`;
+    const fallbackEndpoint = `/me/drive/search(q='${encodeURIComponent(escapeODataString(query))}')`;
     const fallbackResponse = await client.get<GraphResponse<any>>(
       fallbackEndpoint,
       {
