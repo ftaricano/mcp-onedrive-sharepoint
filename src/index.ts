@@ -7,6 +7,8 @@
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   CallToolRequestSchema,
   ErrorCode,
@@ -203,10 +205,15 @@ async function main(): Promise<void> {
 }
 
 // Export for testing
-export { McpOneDriveSharePointServer };
+function isMainModule(moduleUrl: string, argvPath = process.argv[1]): boolean {
+  if (!argvPath) return false;
+  return resolve(fileURLToPath(moduleUrl)) === resolve(argvPath);
+}
+
+export { McpOneDriveSharePointServer, isMainModule };
 
 // Run if this is the main module
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main().catch((error) => {
     console.error("Fatal error:", error);
     process.exit(1);
