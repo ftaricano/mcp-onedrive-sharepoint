@@ -10,11 +10,16 @@ import {
   ICachePlugin,
   PublicClientApplication,
 } from "@azure/msal-node";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { DEFAULT_SCOPES } from "../config/scopes.js";
 
 const lazyRequire = createRequire(import.meta.url);
 let cachedKeytar: SecureStore | null = null;
+const issuedFallbackWarnings = new Set<string>();
 function getDefaultKeychain(): SecureStore {
   if (!cachedKeytar) {
     cachedKeytar = lazyRequire("keytar") as SecureStore;
@@ -46,17 +51,173 @@ interface SecureStore {
 
 interface MicrosoftGraphAuthDependencies {
   keychain?: SecureStore;
+  fallbackStore?: SecureStore;
   pca?: PublicClientApplication;
+}
+
+class FileFallbackStore implements SecureStore {
+  constructor(private readonly cacheDir = getDefaultFallbackCacheDir()) {}
+
+  async getPassword(service: string, account: string): Promise<string | null> {
+    try {
+      return await readFile(this.getCachePath(service, account), "utf-8");
+    } catch (error) {
+      if (isFileNotFound(error)) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async setPassword(
+    service: string,
+    account: string,
+    password: string,
+  ): Promise<void> {
+    await mkdir(this.cacheDir, { recursive: true, mode: 0o700 });
+    await writeFile(this.getCachePath(service, account), password, {
+      encoding: "utf-8",
+      mode: 0o600,
+    });
+  }
+
+  async deletePassword(service: string, account: string): Promise<boolean> {
+    try {
+      await rm(this.getCachePath(service, account), { force: true });
+      return true;
+    } catch (error) {
+      if (isFileNotFound(error)) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  private getCachePath(service: string, account: string): string {
+    const cacheKey = createHash("sha256")
+      .update(`${service}:${account}`)
+      .digest("hex");
+    return join(this.cacheDir, `${cacheKey}.json`);
+  }
+}
+
+function getDefaultFallbackCacheDir(): string {
+  const baseDir =
+    process.env.MCP_ONEDRIVE_SHAREPOINT_CACHE_DIR ??
+    process.env.XDG_CACHE_HOME ??
+    (process.platform === "win32" ? process.env.LOCALAPPDATA : undefined) ??
+    join(homedir(), ".cache");
+  return join(baseDir, "mcp-onedrive-sharepoint");
+}
+
+function isFileNotFound(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as NodeJS.ErrnoException).code === "ENOENT"
+  );
+}
+
+function warnOnce(key: string, message: string, error: unknown): void {
+  if (issuedFallbackWarnings.has(key)) {
+    return;
+  }
+
+  issuedFallbackWarnings.add(key);
+  const detail = error instanceof Error ? error.message : String(error);
+  console.warn(`${message}: ${detail}`);
+}
+
+async function readWithFallback(
+  keychain: SecureStore,
+  fallbackStore: SecureStore,
+  serviceKeyName: string,
+  account: string,
+): Promise<string | null> {
+  try {
+    const secureValue = await keychain.getPassword(serviceKeyName, account);
+    if (secureValue) {
+      return secureValue;
+    }
+  } catch (error) {
+    warnOnce(
+      `read:${serviceKeyName}:${account}`,
+      "Failed to read from system keychain; trying file cache",
+      error,
+    );
+  }
+
+  return fallbackStore.getPassword(serviceKeyName, account);
+}
+
+async function writeWithFallback(
+  keychain: SecureStore,
+  fallbackStore: SecureStore,
+  serviceKeyName: string,
+  account: string,
+  value: string,
+): Promise<void> {
+  try {
+    await keychain.setPassword(serviceKeyName, account, value);
+  } catch (error) {
+    warnOnce(
+      `write:${serviceKeyName}:${account}`,
+      "Failed to write to system keychain; using file cache",
+      error,
+    );
+    await fallbackStore.setPassword(serviceKeyName, account, value);
+    return;
+  }
+
+  try {
+    await fallbackStore.deletePassword(serviceKeyName, account);
+  } catch (error) {
+    warnOnce(
+      `delete-stale-file:${serviceKeyName}:${account}`,
+      "Failed to clear stale file cache entry",
+      error,
+    );
+  }
+}
+
+async function deleteFromAllStores(
+  keychain: SecureStore,
+  fallbackStore: SecureStore,
+  serviceKeyName: string,
+  account: string,
+): Promise<void> {
+  try {
+    await keychain.deletePassword(serviceKeyName, account);
+  } catch (error) {
+    warnOnce(
+      `delete-keychain:${serviceKeyName}:${account}`,
+      "Failed to clear system keychain entry",
+      error,
+    );
+  }
+
+  try {
+    await fallbackStore.deletePassword(serviceKeyName, account);
+  } catch (error) {
+    warnOnce(
+      `delete-file:${serviceKeyName}:${account}`,
+      "Failed to clear file cache entry",
+      error,
+    );
+  }
 }
 
 export function createKeychainMsalCachePlugin(
   keychain: SecureStore,
   serviceKeyName: string,
   cacheAccount: string,
+  fallbackStore: SecureStore = new FileFallbackStore(),
 ): ICachePlugin {
   return {
     beforeCacheAccess: async (tokenCacheContext) => {
-      const cacheSnapshot = await keychain.getPassword(
+      const cacheSnapshot = await readWithFallback(
+        keychain,
+        fallbackStore,
         serviceKeyName,
         cacheAccount,
       );
@@ -71,7 +232,13 @@ export function createKeychainMsalCachePlugin(
       }
 
       const serializedCache = tokenCacheContext.tokenCache.serialize();
-      await keychain.setPassword(serviceKeyName, cacheAccount, serializedCache);
+      await writeWithFallback(
+        keychain,
+        fallbackStore,
+        serviceKeyName,
+        cacheAccount,
+        serializedCache,
+      );
     },
   };
 }
@@ -80,6 +247,7 @@ export class MicrosoftGraphAuth {
   private pca: PublicClientApplication;
   private config: AuthConfig;
   private keychain: SecureStore;
+  private fallbackStore: SecureStore;
   private readonly serviceKeyName = "mcp-onedrive-sharepoint";
   private readonly accessTokenCacheAccount = "access_token";
   private readonly msalCacheAccount = "msal_token_cache";
@@ -97,6 +265,7 @@ export class MicrosoftGraphAuth {
     };
 
     this.keychain = dependencies.keychain ?? getDefaultKeychain();
+    this.fallbackStore = dependencies.fallbackStore ?? new FileFallbackStore();
     this.pca =
       dependencies.pca ??
       new PublicClientApplication({
@@ -253,11 +422,15 @@ export class MicrosoftGraphAuth {
   async signOut(): Promise<void> {
     try {
       this.inMemoryToken = null;
-      await this.keychain.deletePassword(
+      await deleteFromAllStores(
+        this.keychain,
+        this.fallbackStore,
         this.serviceKeyName,
         this.accessTokenCacheAccount,
       );
-      await this.keychain.deletePassword(
+      await deleteFromAllStores(
+        this.keychain,
+        this.fallbackStore,
         this.serviceKeyName,
         this.msalCacheAccount,
       );
@@ -309,7 +482,9 @@ export class MicrosoftGraphAuth {
   private async cacheToken(tokenInfo: TokenInfo): Promise<void> {
     try {
       const tokenData = JSON.stringify(tokenInfo);
-      await this.keychain.setPassword(
+      await writeWithFallback(
+        this.keychain,
+        this.fallbackStore,
         this.serviceKeyName,
         this.accessTokenCacheAccount,
         tokenData,
@@ -321,7 +496,9 @@ export class MicrosoftGraphAuth {
 
   private async getCachedToken(): Promise<TokenInfo | null> {
     try {
-      const tokenData = await this.keychain.getPassword(
+      const tokenData = await readWithFallback(
+        this.keychain,
+        this.fallbackStore,
         this.serviceKeyName,
         this.accessTokenCacheAccount,
       );
@@ -353,6 +530,7 @@ export class MicrosoftGraphAuth {
       this.keychain,
       this.serviceKeyName,
       this.msalCacheAccount,
+      this.fallbackStore,
     );
   }
 
