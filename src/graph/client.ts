@@ -334,7 +334,7 @@ export class GraphClient {
     const fileSize = stats.size;
 
     // Create upload session
-    const sessionUrl = endpoint + "/createUploadSession";
+    const sessionUrl = endpoint.replace(/\/content$/, "") + "/createUploadSession";
     const sessionData = {
       item: {
         "@microsoft.graph.conflictBehavior":
