@@ -17,21 +17,26 @@
     "ci": "npm run build && npm run lint && npm test",
     "format": "prettier --write \"src/**/*.ts\" README.md docs/**/*.md scripts/*.mjs"
   },
-  "keywords": ["mcp", "onedrive", "sharepoint", "microsoft-graph"],
+  "keywords": [
+    "mcp",
+    "onedrive",
+    "sharepoint",
+    "microsoft-graph"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^0.5.0",
     "@azure/msal-node": "^2.6.4",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "axios": "^1.6.7",
-    "keytar": "^7.9.0",
+    "dotenv": "^16.4.1",
     "form-data": "^4.0.0",
-    "mime-types": "^2.1.35",
-    "dotenv": "^16.4.1"
+    "keytar": "^7.9.0",
+    "mime-types": "^2.1.35"
   },
   "devDependencies": {
-    "@types/node": "^20.11.16",
     "@types/mime-types": "^2.1.4",
+    "@types/node": "^20.11.16",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
     "eslint": "^8.56.0",
