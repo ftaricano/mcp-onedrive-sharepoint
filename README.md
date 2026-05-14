@@ -5,7 +5,7 @@
 [![MCP](https://img.shields.io/badge/MCP-compatible-8A2BE2.svg)](https://modelcontextprotocol.io)
 [![TypeScript](https://img.shields.io/badge/typescript-%5E5.3-3178c6.svg)](https://www.typescriptlang.org)
 
-MCP server for Microsoft Graph focused on OneDrive, SharePoint and related document workflows. Delegated device-code auth, 33 tools, also usable as a standalone `ods` CLI for shell scripting.
+MCP server for Microsoft Graph focused on OneDrive, SharePoint and related document workflows. Device-code or client-credentials auth, 33 tools, also usable as a standalone `ods` CLI for shell scripting.
 
 Onboarding commands on a clean clone:
 
