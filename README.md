@@ -135,20 +135,37 @@ Notes:
 - use a specific tenant id if you want tenant-scoped sign-in
 - delegated scopes are what the current auth flow uses
 
-## Authentication setup
+## Authentication modes
 
-Run:
+### Client credentials (recommended for automation)
+
+Set `MICROSOFT_GRAPH_CLIENT_SECRET` (or the alias `SP_CLIENT_SECRET`) in the environment. When either variable is present, the server authenticates as the app identity — no user login, no token expiry issue, no Keychain MSAL cache needed.
+
+```bash
+# In .env or via cpz_keychain_env.sh / Keychain:
+MICROSOFT_GRAPH_CLIENT_ID=your_app_client_id
+MICROSOFT_GRAPH_TENANT_ID=your_tenant_uuid   # must be specific UUID, not "common"
+MICROSOFT_GRAPH_CLIENT_SECRET=your_client_secret
+```
+
+The app registration in Azure AD must use **Application** permissions (not Delegated) with admin consent granted.
+
+### Device code (interactive, default fallback)
+
+When no `clientSecret` is present, the server falls back to delegated device-code flow. On first use:
 
 ```bash
 npm run setup-auth
 ```
 
-The script:
+The script reads `MICROSOFT_GRAPH_CLIENT_ID` / `MICROSOFT_GRAPH_TENANT_ID` from `.env`, starts the device-code login, and stores the resulting MSAL token in the macOS Keychain (service `mcp-onedrive-sharepoint`, accounts `access_token` and `msal_token_cache`).
 
-- reads `MICROSOFT_GRAPH_CLIENT_ID` / `MICROSOFT_GRAPH_TENANT_ID` from `.env` when present
-- prompts for missing values
-- starts Microsoft device-code login
-- stores the token through the existing auth layer
+**Token maintenance:** the MSAL refresh token is valid for 90 days of inactivity. If the server is not used for several days, re-run `npm run setup-auth` to renew. To clear stale tokens:
+
+```bash
+security delete-generic-password -s "mcp-onedrive-sharepoint" -a "access_token"
+security delete-generic-password -s "mcp-onedrive-sharepoint" -a "msal_token_cache"
+```
 
 ## Development commands
 
