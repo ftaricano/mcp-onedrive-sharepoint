@@ -301,6 +301,9 @@ Use the wrapper as the MCP command so the repo-local `.env` is loaded automatica
 - `403 Forbidden` on SharePoint lists/drives: the signed-in user lacks permission to the target site. Check with the site owner.
 - `404` on a `driveId` or `siteId`: the identifier is stale or the resource was deleted. Use `list_drives` / `discover_sites` to re-discover.
 - Build fails on a clean clone: make sure Node.js is 18+ and run `npm install` before `npm run build`.
+- `AADSTS700016` or `401` with client credentials: ensure `MICROSOFT_GRAPH_TENANT_ID` is a specific tenant UUID (not `common`) and that Application permissions have admin consent in Azure AD.
+- `AADSTS7000215` (invalid client secret): the secret has expired or was deleted in Azure AD. Rotate it in the app registration and update `MICROSOFT_GRAPH_CLIENT_SECRET`.
+- Silent token refresh failed / device-code prompt in automated run: token cache in Keychain is stale. Either set `MICROSOFT_GRAPH_CLIENT_SECRET` to switch to client-credentials mode (no expiry), or clear the Keychain entries above and re-run `npm run setup-auth`.
 
 ## Security
 
