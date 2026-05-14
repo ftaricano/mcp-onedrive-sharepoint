@@ -334,7 +334,7 @@ export class GraphClient {
     const fileSize = stats.size;
 
     // Create upload session
-    const sessionUrl = endpoint + "/createUploadSession";
+    const sessionUrl = endpoint.replace(/\/content$/, "") + "/createUploadSession";
     const sessionData = {
       item: {
         "@microsoft.graph.conflictBehavior":
@@ -349,7 +349,7 @@ export class GraphClient {
     }
 
     const uploadUrl = sessionResponse.data.uploadUrl;
-    const chunkSize = 320 * 1024; // 320KB chunks
+    const chunkSize = 10 * 320 * 1024; // 3.2MB — must be a multiple of 320KB per Graph API spec
 
     const fs = await import("fs");
     const fileStream = fs.createReadStream(filePath);

@@ -11,6 +11,7 @@ export interface AuthConfig {
   clientId: string;
   tenantId: string;
   scopes: string[];
+  clientSecret?: string;
 }
 
 export interface ServerConfig {
@@ -34,6 +35,7 @@ export function loadConfig(): ServerConfig {
       scopes: process.env.MICROSOFT_GRAPH_SCOPES?.split(",")
         .map((scope) => scope.trim())
         .filter(Boolean) || [...DEFAULT_SCOPES],
+      clientSecret: process.env.MICROSOFT_GRAPH_CLIENT_SECRET || process.env.SP_CLIENT_SECRET || undefined,
     },
     graph: {
       baseUrl:

@@ -5,7 +5,7 @@
 [![MCP](https://img.shields.io/badge/MCP-compatible-8A2BE2.svg)](https://modelcontextprotocol.io)
 [![TypeScript](https://img.shields.io/badge/typescript-%5E5.3-3178c6.svg)](https://www.typescriptlang.org)
 
-MCP server for Microsoft Graph focused on OneDrive, SharePoint and related document workflows. Delegated device-code auth, 33 tools, also usable as a standalone `ods` CLI for shell scripting.
+MCP server for Microsoft Graph focused on OneDrive, SharePoint and related document workflows. Device-code or client-credentials auth, 33 tools, also usable as a standalone `ods` CLI for shell scripting.
 
 Onboarding commands on a clean clone:
 
@@ -41,7 +41,9 @@ This version includes real structural improvements instead of documentation-only
 ## Requirements
 
 - Node.js 18+
-- A Microsoft Entra ID / Azure app registration for delegated device-code authentication
+- A Microsoft Entra ID / Azure AD app registration. Two auth modes are supported:
+  - **Device-code (default):** Public client registration with Delegated permissions (`Files.ReadWrite.All`, `Sites.ReadWrite.All`, `User.Read`, `offline_access`). No client secret needed.
+  - **Client credentials:** Confidential client registration with Application permissions (`Files.ReadWrite.All`, `Sites.ReadWrite.All`). Requires `MICROSOFT_GRAPH_CLIENT_SECRET` / `SP_CLIENT_SECRET` in env and admin consent in Azure AD. `MICROSOFT_GRAPH_TENANT_ID` must be a specific tenant UUID — `common` does not work with this flow.
 
 ## Installation
 
@@ -117,7 +119,8 @@ The server reads the following environment variables:
 
 ```bash
 MICROSOFT_GRAPH_CLIENT_ID=your_app_client_id
-MICROSOFT_GRAPH_TENANT_ID=common
+MICROSOFT_GRAPH_TENANT_ID=your_tenant_uuid   # use specific UUID for client-credentials; "common" works only for device-code
+MICROSOFT_GRAPH_CLIENT_SECRET=               # optional — activates client-credentials mode; alias SP_CLIENT_SECRET also accepted
 MICROSOFT_GRAPH_SCOPES=Files.ReadWrite.All,Sites.ReadWrite.All,Directory.Read.All,User.Read,offline_access
 MICROSOFT_GRAPH_BASE_URL=https://graph.microsoft.com/v1.0
 MICROSOFT_GRAPH_TIMEOUT=30000
@@ -132,20 +135,37 @@ Notes:
 - use a specific tenant id if you want tenant-scoped sign-in
 - delegated scopes are what the current auth flow uses
 
-## Authentication setup
+## Authentication modes
 
-Run:
+### Client credentials (recommended for automation)
+
+Set `MICROSOFT_GRAPH_CLIENT_SECRET` (or the alias `SP_CLIENT_SECRET`) in the environment. When either variable is present, the server authenticates as the app identity — no user login, no token expiry issue, no Keychain MSAL cache needed.
+
+```bash
+# In .env or via cpz_keychain_env.sh / Keychain:
+MICROSOFT_GRAPH_CLIENT_ID=your_app_client_id
+MICROSOFT_GRAPH_TENANT_ID=your_tenant_uuid   # must be specific UUID, not "common"
+MICROSOFT_GRAPH_CLIENT_SECRET=your_client_secret
+```
+
+The app registration in Azure AD must use **Application** permissions (not Delegated) with admin consent granted.
+
+### Device code (interactive, default fallback)
+
+When no `clientSecret` is present, the server falls back to delegated device-code flow. On first use:
 
 ```bash
 npm run setup-auth
 ```
 
-The script:
+The script reads `MICROSOFT_GRAPH_CLIENT_ID` / `MICROSOFT_GRAPH_TENANT_ID` from `.env`, starts the device-code login, and stores the resulting MSAL token in the macOS Keychain (service `mcp-onedrive-sharepoint`, accounts `access_token` and `msal_token_cache`).
 
-- reads `MICROSOFT_GRAPH_CLIENT_ID` / `MICROSOFT_GRAPH_TENANT_ID` from `.env` when present
-- prompts for missing values
-- starts Microsoft device-code login
-- stores the token through the existing auth layer
+**Token maintenance:** the MSAL refresh token is valid for 90 days of inactivity. If the server is not used for several days, re-run `npm run setup-auth` to renew. To clear stale tokens:
+
+```bash
+security delete-generic-password -s "mcp-onedrive-sharepoint" -a "access_token"
+security delete-generic-password -s "mcp-onedrive-sharepoint" -a "msal_token_cache"
+```
 
 ## Development commands
 
@@ -281,6 +301,9 @@ Use the wrapper as the MCP command so the repo-local `.env` is loaded automatica
 - `403 Forbidden` on SharePoint lists/drives: the signed-in user lacks permission to the target site. Check with the site owner.
 - `404` on a `driveId` or `siteId`: the identifier is stale or the resource was deleted. Use `list_drives` / `discover_sites` to re-discover.
 - Build fails on a clean clone: make sure Node.js is 18+ and run `npm install` before `npm run build`.
+- `AADSTS700016` or `401` with client credentials: ensure `MICROSOFT_GRAPH_TENANT_ID` is a specific tenant UUID (not `common`) and that Application permissions have admin consent in Azure AD.
+- `AADSTS7000215` (invalid client secret): the secret has expired or was deleted in Azure AD. Rotate it in the app registration and update `MICROSOFT_GRAPH_CLIENT_SECRET`.
+- Silent token refresh failed / device-code prompt in automated run: token cache in Keychain is stale. Either set `MICROSOFT_GRAPH_CLIENT_SECRET` to switch to client-credentials mode (no expiry), or clear the Keychain entries above and re-run `npm run setup-auth`.
 
 ## Security
 
@@ -304,5 +327,5 @@ Issues and PRs welcome. Before opening a PR:
 
 ## Current limitations
 
-- authentication depends on real Microsoft Graph credentials and an interactive device-code login
+- in device-code mode, authentication requires an interactive login on first use and periodic renewal; in client-credentials mode the flow is fully non-interactive but requires Application permissions and admin consent in Azure AD
 - only the most critical listing/search flows use the pagination/resource helpers; other tools still use direct endpoint construction

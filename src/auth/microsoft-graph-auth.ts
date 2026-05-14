@@ -6,6 +6,8 @@
 import {
   AccountInfo,
   AuthenticationResult,
+  ClientCredentialRequest,
+  ConfidentialClientApplication,
   DeviceCodeRequest,
   ICachePlugin,
   PublicClientApplication,
@@ -31,6 +33,7 @@ export interface AuthConfig {
   clientId: string;
   tenantId?: string;
   scopes?: string[];
+  clientSecret?: string;
 }
 
 export interface TokenInfo {
@@ -338,9 +341,14 @@ export class MicrosoftGraphAuth {
 
   /**
    * Get a valid access token, refreshing if necessary.
+   * When clientSecret is configured, uses client credentials flow (no user interaction).
    * In-memory cache short-circuits Keychain I/O for warm calls.
    */
   async getAccessToken(): Promise<string> {
+    if (this.config.clientSecret) {
+      return this.getAccessTokenByClientCredentials();
+    }
+
     if (this.inMemoryToken && this.isTokenValid(this.inMemoryToken)) {
       return this.inMemoryToken.accessToken;
     }
@@ -358,6 +366,36 @@ export class MicrosoftGraphAuth {
 
     const tokenInfo = await this.authenticate();
     return tokenInfo.accessToken;
+  }
+
+  private async getAccessTokenByClientCredentials(): Promise<string> {
+    if (this.inMemoryToken && this.isTokenValid(this.inMemoryToken)) {
+      return this.inMemoryToken.accessToken;
+    }
+
+    const cca = new ConfidentialClientApplication({
+      auth: {
+        clientId: this.config.clientId,
+        authority: `https://login.microsoftonline.com/${this.config.tenantId}`,
+        clientSecret: this.config.clientSecret,
+      },
+    });
+
+    const request: ClientCredentialRequest = {
+      scopes: ["https://graph.microsoft.com/.default"],
+    };
+
+    const result = await cca.acquireTokenByClientCredential(request);
+    if (!result?.accessToken) {
+      throw new Error("Client credentials flow returned no token");
+    }
+
+    this.inMemoryToken = {
+      accessToken: result.accessToken,
+      expiresOn: result.expiresOn ?? new Date(Date.now() + 3600 * 1000),
+      account: { username: `app:${this.config.clientId}` },
+    };
+    return this.inMemoryToken.accessToken;
   }
 
   private async loadOrRefreshToken(): Promise<TokenInfo | null> {
