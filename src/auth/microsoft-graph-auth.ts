@@ -28,6 +28,7 @@ export interface AuthConfig {
   clientId: string;
   tenantId?: string;
   scopes?: string[];
+  clientSecret?: string;
 }
 
 export interface TokenInfo {
