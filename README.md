@@ -41,7 +41,9 @@ This version includes real structural improvements instead of documentation-only
 ## Requirements
 
 - Node.js 18+
-- A Microsoft Entra ID / Azure app registration for delegated device-code authentication
+- A Microsoft Entra ID / Azure AD app registration. Two auth modes are supported:
+  - **Device-code (default):** Public client registration with Delegated permissions (`Files.ReadWrite.All`, `Sites.ReadWrite.All`, `User.Read`, `offline_access`). No client secret needed.
+  - **Client credentials:** Confidential client registration with Application permissions (`Files.ReadWrite.All`, `Sites.ReadWrite.All`). Requires `MICROSOFT_GRAPH_CLIENT_SECRET` / `SP_CLIENT_SECRET` in env and admin consent in Azure AD. `MICROSOFT_GRAPH_TENANT_ID` must be a specific tenant UUID — `common` does not work with this flow.
 
 ## Installation
 
