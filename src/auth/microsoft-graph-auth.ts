@@ -6,6 +6,8 @@
 import {
   AccountInfo,
   AuthenticationResult,
+  ClientCredentialRequest,
+  ConfidentialClientApplication,
   DeviceCodeRequest,
   ICachePlugin,
   PublicClientApplication,
