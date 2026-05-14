@@ -327,5 +327,5 @@ Issues and PRs welcome. Before opening a PR:
 
 ## Current limitations
 
-- authentication depends on real Microsoft Graph credentials and an interactive device-code login
+- in device-code mode, authentication requires an interactive login on first use and periodic renewal; in client-credentials mode the flow is fully non-interactive but requires Application permissions and admin consent in Azure AD
 - only the most critical listing/search flows use the pagination/resource helpers; other tools still use direct endpoint construction
