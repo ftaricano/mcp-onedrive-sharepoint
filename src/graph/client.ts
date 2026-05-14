@@ -349,7 +349,7 @@ export class GraphClient {
     }
 
     const uploadUrl = sessionResponse.data.uploadUrl;
-    const chunkSize = 320 * 1024; // 320KB chunks
+    const chunkSize = 4 * 1024 * 1024; // 4MB chunks (was 320KB — reduces round-trips for large files)
 
     const fs = await import("fs");
     const fileStream = fs.createReadStream(filePath);
