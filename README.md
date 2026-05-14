@@ -119,7 +119,8 @@ The server reads the following environment variables:
 
 ```bash
 MICROSOFT_GRAPH_CLIENT_ID=your_app_client_id
-MICROSOFT_GRAPH_TENANT_ID=common
+MICROSOFT_GRAPH_TENANT_ID=your_tenant_uuid   # use specific UUID for client-credentials; "common" works only for device-code
+MICROSOFT_GRAPH_CLIENT_SECRET=               # optional — activates client-credentials mode; alias SP_CLIENT_SECRET also accepted
 MICROSOFT_GRAPH_SCOPES=Files.ReadWrite.All,Sites.ReadWrite.All,Directory.Read.All,User.Read,offline_access
 MICROSOFT_GRAPH_BASE_URL=https://graph.microsoft.com/v1.0
 MICROSOFT_GRAPH_TIMEOUT=30000
