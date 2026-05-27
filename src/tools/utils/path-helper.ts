@@ -52,9 +52,7 @@ export function sanitizeFileName(name: string): string {
     .replace(/\s+/g, " ")
     // Remove leading/trailing spaces and dots
     .trim()
-    .replace(/^\.+|\.+$/g, "")
-    // Replace spaces with underscores for better compatibility
-    .replace(/\s/g, "_");
+    .replace(/^\.+|\.+$/g, "");
 
   // Check for reserved names
   const nameWithoutExt = sanitized.split(".")[0].toUpperCase();
