@@ -569,11 +569,15 @@ export async function handleBatchFileOperations(args: any) {
               throw new Error("Source and destination required for upload");
             }
 
+            // op.source is a LOCAL file read from disk -> sandbox it.
+            // op.destination is a REMOTE Graph path -> leave raw.
+            const safeSource = resolveLocalPath(op.source, { mustExist: true });
+
             const uploadEndpoint = `${driveRoot}/root:/${op.destination}:/content`;
 
             const response = await client.uploadFile(
               uploadEndpoint,
-              op.source,
+              safeSource,
               path.basename(op.destination),
               { conflictBehavior: "rename" },
             );
@@ -590,6 +594,8 @@ export async function handleBatchFileOperations(args: any) {
               throw new Error("Source and destination required for download");
             }
 
+            // op.source is a REMOTE Graph path -> leave raw.
+            // op.destination is a LOCAL file written to disk -> sandbox it.
             const downloadEndpoint = op.itemId
               ? `${driveRoot}/items/${op.itemId}/content`
               : `${driveRoot}/root:/${op.source}:/content`;
@@ -597,7 +603,8 @@ export async function handleBatchFileOperations(args: any) {
             const response = await client.downloadFile(downloadEndpoint);
 
             if (response.success && response.data) {
-              fs.writeFileSync(op.destination, response.data as Buffer);
+              const safeDestination = resolveLocalPath(op.destination);
+              fs.writeFileSync(safeDestination, response.data as Buffer);
               result.success = true;
               result.size = (response.data as Buffer).length;
             }
