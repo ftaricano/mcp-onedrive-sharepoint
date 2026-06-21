@@ -5,7 +5,7 @@
 [![MCP](https://img.shields.io/badge/MCP-compatible-8A2BE2.svg)](https://modelcontextprotocol.io)
 [![TypeScript](https://img.shields.io/badge/typescript-%5E5.3-3178c6.svg)](https://www.typescriptlang.org)
 
-MCP server for Microsoft Graph focused on OneDrive, SharePoint and related document workflows. Device-code or client-credentials auth, 33 tools, also usable as a standalone `ods` CLI for shell scripting.
+MCP server and CLI for Microsoft Graph focused on OneDrive, SharePoint and related document workflows. It supports device-code or client-credentials auth, starts with a safe 10-tool core profile, and can opt into advanced tools for trusted automation.
 
 Onboarding commands on a clean clone:
 
@@ -15,28 +15,33 @@ Onboarding commands on a clean clone:
 - `npm run ci`
 - `npm run setup-auth`
 
-## What is implemented
+## Tool profiles
 
-The server exposes 33 MCP tools grouped into:
+The server defaults to `MCP_TOOL_PROFILE=core`, a smaller public surface intended for day-to-day document workflows:
+
+- `health_check`, `list_drives`
+- `discover_sites`, `resolve_site`
+- `list_files`, `search_files`, `get_file_metadata`
+- `download_file`, `upload_file`, `create_folder`
+
+Set `MCP_TOOL_PROFILE=full` to expose advanced and destructive tools for trusted environments:
 
 - Files: `list_files`, `download_file`, `upload_file`, `create_folder`, `move_item`, `delete_item`, `search_files`, `get_file_metadata`, `share_item`, `copy_item`
 - SharePoint: `discover_sites`, `resolve_site`, `list_site_lists`, `get_list_schema`, `list_items`, `get_list_item`, `create_list_item`, `update_list_item`, `delete_list_item`
-- Utilities: `health_check`, `get_user_profile`, `list_drives`, `global_search`, `batch_operations`
+- Utilities: `health_check`, `get_user_profile`, `list_drives`, `global_search`
 - Advanced: `advanced_share`, `manage_permissions`, `check_user_access`, `sync_folder`, `batch_file_operations`, `storage_analytics`, `version_management`, `excel_operations`, `excel_analysis`
 
-## Recent foundation improvements
+`batch_operations` is intentionally not part of either profile by default because it is a raw Microsoft Graph escape hatch. Enable it only for admin/debug workflows with `MCP_ENABLE_EXPERIMENTAL_GRAPH_BATCH=true`.
 
-This version includes real structural improvements instead of documentation-only changes:
+You can also remove individual tools with `MCP_DISABLED_TOOLS=delete_item,manage_permissions`.
 
-- fixed `npm run setup-auth` to call the real TypeScript auth setup flow
-- added working ESLint configuration
-- added executable tests with Node's built-in test runner
-- aligned README and `.env.example` with the real environment variables and scripts
-- introduced reusable Graph helpers for:
-  - consistent MCP JSON/error envelopes
-  - pagination extraction from Microsoft Graph responses
-  - resolving OneDrive/SharePoint resources by `driveId`, `siteId`, `itemId` and path
-- updated key listing/search flows to return pagination metadata and support `driveId`
+## Why this repo
+
+- one MCP server for both OneDrive and SharePoint document libraries
+- matching `ods` CLI for shell scripting and one-shot automation
+- device-code auth for interactive use; client credentials for unattended jobs
+- site aliases loaded from a local registry so tenant IDs stay out of git
+- pagination/resource helpers for `driveId`, `siteId`, `itemId` and path targeting
 
 ## Requirements
 
@@ -57,11 +62,11 @@ cp .env.example .env
 ## Operational wrappers
 
 Important operational rule:
+
 - use this MCP on demand
 - do not keep it permanently bound/loaded in Hermes or Claude Code when not needed
 - prefer one-shot `spcall` / `mcporter --stdio` execution so the process exits right after the call and does not accumulate zombie or idle MCP processes
 - the `spcall` wrapper includes post-call cleanup for stray repo-local MCP child processes
-
 
 This repo includes lightweight wrappers for local operational use:
 
@@ -127,6 +132,9 @@ MICROSOFT_GRAPH_TIMEOUT=30000
 MICROSOFT_GRAPH_MAX_RETRIES=3
 MICROSOFT_GRAPH_CACHE_ENABLED=true
 MICROSOFT_GRAPH_CACHE_TTL=3600
+MCP_TOOL_PROFILE=core
+MCP_DISABLED_TOOLS=
+MCP_ENABLE_EXPERIMENTAL_GRAPH_BATCH=false
 ```
 
 Notes:
@@ -134,6 +142,7 @@ Notes:
 - use `MICROSOFT_GRAPH_TENANT_ID=common` for multi-tenant/device-code onboarding
 - use a specific tenant id if you want tenant-scoped sign-in
 - delegated scopes are what the current auth flow uses
+- set `MCP_LOCAL_FILE_ROOT` to constrain local upload/download/sync file access; if unset, local paths are constrained to the process working directory
 
 ## Authentication modes
 
@@ -310,6 +319,7 @@ Use the wrapper as the MCP command so the repo-local `.env` is loaded automatica
 This server handles Microsoft Graph OAuth tokens and delegated access to corporate file storage. Treat it accordingly:
 
 - `.env`, `tokens.json`, `credentials.json` and the OS keychain entries are **never** committed — see [.gitignore](.gitignore).
+- tenant-specific `siteId`, `driveId`, SharePoint URLs and internal operational paths should stay in local/private docs, not in this public repo.
 - Report security issues privately via [GitHub security advisories](https://github.com/ftaricano/mcp-onedrive-sharepoint/security/advisories/new) — do not open a public issue.
 - If a token leaks, revoke it from [Azure AD → Enterprise Applications → your app → Users & groups](https://portal.azure.com) and re-run `npm run setup-auth`.
 
@@ -328,4 +338,5 @@ Issues and PRs welcome. Before opening a PR:
 ## Current limitations
 
 - in device-code mode, authentication requires an interactive login on first use and periodic renewal; in client-credentials mode the flow is fully non-interactive but requires Application permissions and admin consent in Azure AD
-- only the most critical listing/search flows use the pagination/resource helpers; other tools still use direct endpoint construction
+- advanced/destructive tools require `MCP_TOOL_PROFILE=full`
+- raw Graph batch calls require `MCP_ENABLE_EXPERIMENTAL_GRAPH_BATCH=true`

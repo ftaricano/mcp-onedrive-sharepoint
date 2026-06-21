@@ -15,24 +15,12 @@ import {
   ListToolsRequestSchema,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
-import { Tool } from "@modelcontextprotocol/sdk/types.js";
-
-// Import all tool categories
-import { fileTools, fileHandlers } from "./tools/files/index.js";
-import {
-  sharepointTools,
-  sharepointHandlers,
-} from "./tools/sharepoint/index.js";
-import { utilityTools, utilityHandlers } from "./tools/utils/index.js";
-
-// Import advanced tools
-import { advancedTools, advancedHandlers } from "./tools/advanced/index.js";
-
 // Import configuration and initialization
 import { bootstrap, prewarmAuth } from "./core/bootstrap.js";
 import { resetGraphClient } from "./graph/client.js";
 import { createUserFriendlyError } from "./graph/error-handler.js";
 import { toolErrorResponse } from "./graph/contracts.js";
+import { getToolRegistry, ToolHandler } from "./tools/registry.js";
 
 class McpOneDriveSharePointServer {
   private server: Server;
@@ -80,22 +68,12 @@ class McpOneDriveSharePointServer {
     });
   }
 
-  private getAllTools(): Tool[] {
-    return [
-      ...fileTools,
-      ...sharepointTools,
-      ...utilityTools,
-      ...advancedTools,
-    ];
+  private getAllTools() {
+    return getToolRegistry().tools;
   }
 
-  private getAllHandlers(): Record<string, Function> {
-    return {
-      ...fileHandlers,
-      ...sharepointHandlers,
-      ...utilityHandlers,
-      ...advancedHandlers,
-    };
+  private getAllHandlers(): Record<string, ToolHandler> {
+    return getToolRegistry().handlers;
   }
 
   private async ensureInitialized(): Promise<void> {

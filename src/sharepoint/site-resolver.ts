@@ -49,7 +49,8 @@ function defaultSitesConfigPath(): string {
 }
 
 function loadKnownSitesFromDisk(): KnownSharePointSite[] {
-  const configPath = process.env.MCP_SITES_CONFIG_PATH || defaultSitesConfigPath();
+  const configPath =
+    process.env.MCP_SITES_CONFIG_PATH || defaultSitesConfigPath();
   if (!existsSync(configPath)) {
     return [];
   }

@@ -191,7 +191,8 @@ test("list_drives can target a canonical site drive directly", async () => {
         id: endpoint.replace("/drives/", ""),
         name: "Documents",
         driveType: "documentLibrary",
-        webUrl: "https://example.sharepoint.com/sites/Secondary/Shared%20Documents",
+        webUrl:
+          "https://example.sharepoint.com/sites/Secondary/Shared%20Documents",
         quota: {
           total: 100,
           used: 40,

@@ -6,12 +6,7 @@
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { basename } from "node:path";
 import { getGraphClient } from "../../graph/client.js";
-import {
-  DriveItem,
-  Permission,
-  UploadSession,
-  GraphResponse,
-} from "../../graph/models.js";
+import { DriveItem, Permission, GraphResponse } from "../../graph/models.js";
 import {
   extractPaginatedResult,
   jsonTextResponse,
@@ -26,6 +21,10 @@ import {
   getDriveRootEndpoint,
 } from "../../graph/resource-resolver.js";
 import { resolveDriveTargetContext } from "../../sharepoint/site-resolver.js";
+import {
+  ensureParentDirectory,
+  resolveLocalPath,
+} from "../../utils/local-path.js";
 
 async function resolveFileDriveContext(
   args: any,
@@ -222,15 +221,17 @@ export async function handleDownloadFile(args: any) {
 
       if (outputPath) {
         const fs = await import("fs");
-        await fs.promises.writeFile(outputPath, buffer);
+        const safeOutputPath = resolveLocalPath(outputPath);
+        ensureParentDirectory(safeOutputPath);
+        await fs.promises.writeFile(safeOutputPath, buffer);
 
         return jsonTextResponse({
           success: true,
           target: describeDriveTarget({ siteId, driveId }),
           site: resolvedSite,
-          message: `File downloaded successfully to ${outputPath}`,
+          message: `File downloaded successfully to ${safeOutputPath}`,
           size: buffer.length,
-          path: outputPath,
+          path: safeOutputPath,
         });
       } else {
         return jsonTextResponse({
@@ -325,9 +326,16 @@ export async function handleUploadFile(args: any) {
 
     const fileName = basename(pathPrep.sanitizedPath);
 
-    const response = await client.uploadFile(endpoint, localPath, fileName, {
-      conflictBehavior,
-    });
+    const safeLocalPath = resolveLocalPath(localPath, { mustExist: true });
+
+    const response = await client.uploadFile(
+      endpoint,
+      safeLocalPath,
+      fileName,
+      {
+        conflictBehavior,
+      },
+    );
 
     if (response.success && response.data) {
       const item = response.data as DriveItem;
@@ -486,12 +494,16 @@ export const moveItem: Tool = {
 export async function handleMoveItem(args: any) {
   try {
     const client = getGraphClient();
-    const { itemId, itemPath, newName, parentFolderId, parentFolderPath } = args;
+    const { itemId, itemPath, newName, parentFolderId, parentFolderPath } =
+      args;
     const { siteId, driveId } = await resolveFileDriveContext(args, client);
 
-    const endpoint = buildDriveItemEndpoint(
-      { itemId, itemPath, siteId, driveId },
-    );
+    const endpoint = buildDriveItemEndpoint({
+      itemId,
+      itemPath,
+      siteId,
+      driveId,
+    });
 
     const updateData: any = {};
 
@@ -583,9 +595,12 @@ export async function handleDeleteItem(args: any) {
     const { itemId, itemPath, permanent = false } = args;
     const { siteId, driveId } = await resolveFileDriveContext(args, client);
 
-    const endpoint = buildDriveItemEndpoint(
-      { itemId, itemPath, siteId, driveId },
-    );
+    const endpoint = buildDriveItemEndpoint({
+      itemId,
+      itemPath,
+      siteId,
+      driveId,
+    });
 
     const response = await client.delete(endpoint);
 
@@ -762,9 +777,12 @@ export async function handleGetFileMetadata(args: any) {
     const { itemId, itemPath, includeVersions = false } = args;
     const { siteId, driveId } = await resolveFileDriveContext(args, client);
 
-    const endpoint = buildDriveItemEndpoint(
-      { itemId, itemPath, siteId, driveId },
-    );
+    const endpoint = buildDriveItemEndpoint({
+      itemId,
+      itemPath,
+      siteId,
+      driveId,
+    });
 
     const response = await client.get<DriveItem>(endpoint);
 

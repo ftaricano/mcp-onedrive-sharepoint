@@ -48,7 +48,11 @@ export function buildArgs(
     } catch (err) {
       throw new Error(`Invalid --json payload: ${(err as Error).message}`);
     }
-    if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+    if (
+      payload === null ||
+      typeof payload !== "object" ||
+      Array.isArray(payload)
+    ) {
       throw new Error("--json payload must be a JSON object");
     }
     return { ...(payload as Record<string, unknown>), ...rest };

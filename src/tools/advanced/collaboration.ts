@@ -100,7 +100,12 @@ export async function handleAdvancedShare(args: any) {
       retainInheritedPermissions = true,
     } = args;
     const { siteId, driveId } = await resolveDriveTargetContext(
-      { site: args.site, siteId: args.siteId, siteUrl: args.siteUrl, driveId: args.driveId },
+      {
+        site: args.site,
+        siteId: args.siteId,
+        siteUrl: args.siteUrl,
+        driveId: args.driveId,
+      },
       client,
     );
 
@@ -214,15 +219,14 @@ export const managePermissions: Tool = {
 export async function handleManagePermissions(args: any) {
   try {
     const client = getGraphClient();
-    const {
-      itemId,
-      itemPath,
-      action = "list",
-      permissionId,
-      newRoles,
-    } = args;
+    const { itemId, itemPath, action = "list", permissionId, newRoles } = args;
     const { siteId, driveId } = await resolveDriveTargetContext(
-      { site: args.site, siteId: args.siteId, siteUrl: args.siteUrl, driveId: args.driveId },
+      {
+        site: args.site,
+        siteId: args.siteId,
+        siteUrl: args.siteUrl,
+        driveId: args.driveId,
+      },
       client,
     );
 
@@ -230,9 +234,12 @@ export async function handleManagePermissions(args: any) {
       throw new Error("Either itemId or itemPath is required");
     }
 
-    const baseEndpoint = buildDriveItemEndpoint(
-      { itemId, itemPath, siteId, driveId },
-    );
+    const baseEndpoint = buildDriveItemEndpoint({
+      itemId,
+      itemPath,
+      siteId,
+      driveId,
+    });
 
     switch (action) {
       case "list": {
@@ -384,14 +391,14 @@ export const checkUserAccess: Tool = {
 export async function handleCheckUserAccess(args: any) {
   try {
     const client = getGraphClient();
-    const {
-      itemId,
-      itemPath,
-      userEmail,
-      includeInherited = true,
-    } = args;
+    const { itemId, itemPath, userEmail, includeInherited = true } = args;
     const { siteId, driveId } = await resolveDriveTargetContext(
-      { site: args.site, siteId: args.siteId, siteUrl: args.siteUrl, driveId: args.driveId },
+      {
+        site: args.site,
+        siteId: args.siteId,
+        siteUrl: args.siteUrl,
+        driveId: args.driveId,
+      },
       client,
     );
 
@@ -399,9 +406,12 @@ export async function handleCheckUserAccess(args: any) {
       throw new Error("Either itemId or itemPath is required");
     }
 
-    const baseEndpoint = buildDriveItemEndpoint(
-      { itemId, itemPath, siteId, driveId },
-    );
+    const baseEndpoint = buildDriveItemEndpoint({
+      itemId,
+      itemPath,
+      siteId,
+      driveId,
+    });
 
     // Get all permissions for the item
     const permissionsEndpoint = `${baseEndpoint}/permissions`;

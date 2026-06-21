@@ -53,11 +53,11 @@ test("sync_folder covers upload conflict resolution branches", async () => {
       expectConflict: false,
     },
     {
-      name: "rename records conflict instead of uploading",
+      name: "rename uploads a renamed local copy",
       conflictResolution: "rename",
       remoteModified: "2026-04-14T18:00:00.000Z",
       localModified: new Date("2026-04-14T20:00:00.000Z"),
-      expectUpload: false,
+      expectUpload: true,
       expectConflict: true,
     },
   ] as const;
@@ -120,13 +120,22 @@ test("sync_folder covers upload conflict resolution branches", async () => {
       if (scenario.expectUpload) {
         const [uploadEndpoint, uploadPath, uploadName, options] =
           mock.methodCalls("uploadFile")[0].args;
-        assert.equal(
-          uploadEndpoint,
-          "/me/drive/root:/Docs/report.txt:/content",
-        );
+        if (scenario.conflictResolution === "rename") {
+          assert.match(
+            uploadEndpoint,
+            /^\/me\/drive\/root:\/Docs\/report_local_\d+\.txt:\/content$/,
+          );
+          assert.match(uploadName, /^report_local_\d+\.txt$/);
+          assert.deepEqual(options, { conflictBehavior: "rename" });
+        } else {
+          assert.equal(
+            uploadEndpoint,
+            "/me/drive/root:/Docs/report.txt:/content",
+          );
+          assert.equal(uploadName, "report.txt");
+          assert.deepEqual(options, { conflictBehavior: "replace" });
+        }
         assert.equal(uploadPath, localFilePath);
-        assert.equal(uploadName, "report.txt");
-        assert.deepEqual(options, { conflictBehavior: "replace" });
       }
 
       if (scenario.expectConflict) {
@@ -168,11 +177,11 @@ test("sync_folder covers download conflict resolution branches", async () => {
       expectConflict: false,
     },
     {
-      name: "rename records conflict instead of overwriting local file",
+      name: "rename downloads a renamed remote copy",
       conflictResolution: "rename",
       remoteModified: "2026-04-14T20:00:00.000Z",
       localModified: new Date("2026-04-14T10:00:00.000Z"),
-      expectDownload: false,
+      expectDownload: true,
       expectConflict: true,
     },
   ] as const;
@@ -232,7 +241,19 @@ test("sync_folder covers download conflict resolution branches", async () => {
       );
 
       if (scenario.expectDownload) {
-        assert.equal(readFileSync(localFilePath, "utf8"), "remote-buffer");
+        if (scenario.conflictResolution === "rename") {
+          const renamed = readdirSync(localPath).find((name) =>
+            /^report_remote_\d+\.txt$/.test(name),
+          );
+          assert.ok(renamed);
+          assert.equal(
+            readFileSync(path.join(localPath, renamed), "utf8"),
+            "remote-buffer",
+          );
+          assert.equal(readFileSync(localFilePath, "utf8"), "old-local");
+        } else {
+          assert.equal(readFileSync(localFilePath, "utf8"), "remote-buffer");
+        }
         assert.equal(
           mock.methodCalls("downloadFile")[0].args[0],
           "/me/drive/items/remote-1/content",

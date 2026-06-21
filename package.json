@@ -1,9 +1,28 @@
 {
   "name": "mcp-onedrive-sharepoint",
   "version": "1.0.0",
-  "description": "MCP server for OneDrive/SharePoint integration",
+  "description": "MCP server and CLI for OneDrive and SharePoint via Microsoft Graph",
   "main": "build/index.js",
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "build/**",
+    "!build/tests/**",
+    "!build/.tsbuildinfo",
+    "!build/**/*.map",
+    "!build/utils/test-enhancements.*",
+    "scripts/exec-with-env.mjs",
+    "scripts/ods.sh",
+    "scripts/run-stdio.sh",
+    "scripts/spcall.sh",
+    "config/sites.example.json",
+    ".env.example",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
   "scripts": {
     "build": "tsc --pretty false",
     "dev": "tsx src/index.ts",
@@ -12,18 +31,28 @@
     "stdio": "./scripts/run-stdio.sh",
     "spcall": "./scripts/spcall.sh",
     "setup-auth": "tsx src/auth/setup-auth.ts",
-    "test": "npm run build && node --test build/tests/*.test.js",
+    "test": "npm run build && MCP_LOCAL_FILE_ROOT=/ node --test build/tests/*.test.js",
     "lint": "eslint . --ext .ts --max-warnings 393",
     "ci": "npm run build && npm run lint && npm test",
-    "format": "prettier --write \"src/**/*.ts\" README.md docs/**/*.md scripts/*.mjs"
+    "format": "prettier --write \"src/**/*.ts\" README.md SECURITY.md scripts/*.mjs"
   },
   "keywords": [
     "mcp",
     "onedrive",
     "sharepoint",
-    "microsoft-graph"
+    "microsoft-graph",
+    "llm-tools",
+    "cli"
   ],
-  "author": "",
+  "author": "Fernando Taricano",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ftaricano/mcp-onedrive-sharepoint.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ftaricano/mcp-onedrive-sharepoint/issues"
+  },
+  "homepage": "https://github.com/ftaricano/mcp-onedrive-sharepoint#readme",
   "license": "MIT",
   "dependencies": {
     "@azure/msal-node": "^2.6.4",

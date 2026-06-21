@@ -15,7 +15,6 @@ import {
   driveCache,
 } from "../utils/cache-manager.js";
 import { SecurityValidator, AuditLogger } from "../utils/security-validator.js";
-import { parsePositiveInt } from "../utils/parse-number.js";
 import * as FormData from "form-data";
 import { createReadStream } from "fs";
 import { lookup } from "mime-types";
@@ -47,9 +46,6 @@ export const DEFAULT_MAX_PAGINATION_ITEMS = 10_000;
 export const DEFAULT_MAX_PAGINATION_PAGES = 1_000;
 
 export class GraphClient {
-  /** Upper bound (seconds) honoured from a Retry-After header. */
-  private static readonly MAX_RETRY_AFTER_SECONDS = 300;
-
   private axios: AxiosInstance;
   private sessionCache: Map<string, WorkbookSession> = new Map();
   private rateLimitDelay = 0;
@@ -121,15 +117,7 @@ export class GraphClient {
   private updateRateLimitInfo(response: AxiosResponse): void {
     const retryAfter = response.headers["retry-after"];
     if (retryAfter) {
-      // Retry-After is in seconds. Guard against a malformed (NaN) or hostile
-      // (huge) header value that would otherwise break the wait logic or hang
-      // the process. Cap the wait at MAX_RETRY_AFTER_SECONDS.
-      const seconds = parsePositiveInt(
-        retryAfter,
-        0,
-        GraphClient.MAX_RETRY_AFTER_SECONDS,
-      );
-      this.rateLimitDelay = seconds * 1000;
+      this.rateLimitDelay = parseInt(retryAfter, 10) * 1000;
     } else {
       this.rateLimitDelay = 0;
     }
@@ -346,7 +334,8 @@ export class GraphClient {
     const fileSize = stats.size;
 
     // Create upload session
-    const sessionUrl = endpoint.replace(/\/content$/, "") + "/createUploadSession";
+    const sessionUrl =
+      endpoint.replace(/\/content$/, "") + "/createUploadSession";
     const sessionData = {
       item: {
         "@microsoft.graph.conflictBehavior":

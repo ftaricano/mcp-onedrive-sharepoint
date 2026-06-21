@@ -83,10 +83,7 @@ test("buildArgs throws on invalid JSON payload", () => {
 });
 
 test("buildArgs rejects non-object JSON payloads", () => {
-  assert.throws(
-    () => buildArgs({ json: "[1,2,3]" }),
-    /must be a JSON object/,
-  );
+  assert.throws(() => buildArgs({ json: "[1,2,3]" }), /must be a JSON object/);
   assert.throws(() => buildArgs({ json: "42" }), /must be a JSON object/);
   assert.throws(() => buildArgs({ json: "null" }), /must be a JSON object/);
 });

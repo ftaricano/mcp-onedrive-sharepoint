@@ -10,29 +10,10 @@
  */
 
 import { bootstrap } from "./core/bootstrap.js";
-import { fileTools, fileHandlers } from "./tools/files/index.js";
-import {
-  sharepointTools,
-  sharepointHandlers,
-} from "./tools/sharepoint/index.js";
-import { utilityTools, utilityHandlers } from "./tools/utils/index.js";
-import { advancedTools, advancedHandlers } from "./tools/advanced/index.js";
+import { getToolRegistry } from "./tools/registry.js";
 import { createUserFriendlyError } from "./graph/error-handler.js";
 import { parseArgs, buildArgs, extractText } from "./cli/args.js";
 import { runAuthSetup } from "./cli/auth-command.js";
-
-const allTools = [
-  ...fileTools,
-  ...sharepointTools,
-  ...utilityTools,
-  ...advancedTools,
-];
-const allHandlers: Record<string, (args: any) => Promise<any>> = {
-  ...fileHandlers,
-  ...sharepointHandlers,
-  ...utilityHandlers,
-  ...advancedHandlers,
-} as Record<string, (args: any) => Promise<any>>;
 
 function printUsage(): void {
   process.stderr.write(
@@ -50,14 +31,20 @@ function printUsage(): void {
 
 async function main(): Promise<void> {
   const [, , command, ...rest] = process.argv;
+  const registry = getToolRegistry();
 
-  if (!command || command === "help" || command === "--help" || command === "-h") {
+  if (
+    !command ||
+    command === "help" ||
+    command === "--help" ||
+    command === "-h"
+  ) {
     printUsage();
     process.exit(command ? 0 : 1);
   }
 
   if (command === "list") {
-    for (const tool of allTools) {
+    for (const tool of registry.tools) {
       process.stdout.write(`${tool.name}\t${tool.description ?? ""}\n`);
     }
     return;
@@ -65,7 +52,7 @@ async function main(): Promise<void> {
 
   if (command === "schema") {
     const name = rest[0];
-    const tool = allTools.find((t) => t.name === name);
+    const tool = registry.tools.find((t) => t.name === name);
     if (!tool) {
       process.stderr.write(`Unknown tool: ${name}\n`);
       process.exit(1);
@@ -79,7 +66,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const handler = allHandlers[command];
+  const handler = registry.handlers[command];
   if (!handler) {
     process.stderr.write(`Unknown tool: ${command}\nTry: ods list\n`);
     process.exit(1);

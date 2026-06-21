@@ -46,9 +46,10 @@ export function sanitizeFileName(name: string): string {
   ];
 
   let sanitized = name
-    // Replace invalid characters with underscores
+    // Replace invalid characters with underscores (spaces are valid in
+    // OneDrive/SharePoint names and must be preserved to match existing folders)
     .replace(invalidChars, "_")
-    // Replace multiple spaces with single space
+    // Collapse runs of whitespace into a single space
     .replace(/\s+/g, " ")
     // Remove leading/trailing spaces and dots
     .trim()
