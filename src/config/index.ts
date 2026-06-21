@@ -4,6 +4,7 @@
 
 import * as dotenv from "dotenv";
 import { DEFAULT_SCOPES } from "./scopes.js";
+import { parsePositiveInt } from "../utils/parse-number.js";
 
 dotenv.config();
 
@@ -41,12 +42,24 @@ export function loadConfig(): ServerConfig {
       baseUrl:
         process.env.MICROSOFT_GRAPH_BASE_URL ||
         "https://graph.microsoft.com/v1.0",
-      timeout: parseInt(process.env.MICROSOFT_GRAPH_TIMEOUT || "30000", 10),
-      maxRetries: parseInt(process.env.MICROSOFT_GRAPH_MAX_RETRIES || "3", 10),
+      timeout: parsePositiveInt(
+        process.env.MICROSOFT_GRAPH_TIMEOUT,
+        DEFAULT_TIMEOUT,
+        MAX_TIMEOUT,
+      ),
+      maxRetries: parsePositiveInt(
+        process.env.MICROSOFT_GRAPH_MAX_RETRIES,
+        DEFAULT_MAX_RETRIES,
+        MAX_RETRIES,
+      ),
     },
     cache: {
       enabled: process.env.MICROSOFT_GRAPH_CACHE_ENABLED !== "false",
-      ttl: parseInt(process.env.MICROSOFT_GRAPH_CACHE_TTL || "3600", 10),
+      ttl: parsePositiveInt(
+        process.env.MICROSOFT_GRAPH_CACHE_TTL,
+        DEFAULT_CACHE_TTL,
+        MAX_CACHE_TTL,
+      ),
     },
   };
 
@@ -78,3 +91,9 @@ export function validateConfig(config: ServerConfig): void {
 export const GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0";
 export const DEFAULT_TIMEOUT = 30000;
 export const DEFAULT_MAX_RETRIES = 3;
+export const DEFAULT_CACHE_TTL = 3600;
+
+// Upper bounds for numeric env config, guarding against absurd/hostile values.
+export const MAX_TIMEOUT = 600000; // 10 minutes
+export const MAX_RETRIES = 10;
+export const MAX_CACHE_TTL = 86400; // 24 hours
