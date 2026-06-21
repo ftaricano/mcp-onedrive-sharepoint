@@ -38,5 +38,8 @@ credentials.json
 config/sites.local.json
 
 # Private operational docs (tenant-internal, never committed)
-docs/cpz-operations.md.claude/
+docs/cpz-operations.md
+
+# Agent workspace state
+.claude/
 .codex/
