@@ -15,6 +15,7 @@ import {
   driveCache,
 } from "../utils/cache-manager.js";
 import { SecurityValidator, AuditLogger } from "../utils/security-validator.js";
+import { parsePositiveInt } from "../utils/parse-number.js";
 import * as FormData from "form-data";
 import { createReadStream } from "fs";
 import { lookup } from "mime-types";
@@ -44,6 +45,14 @@ export interface PaginationOptions extends RequestOptions {
 
 export const DEFAULT_MAX_PAGINATION_ITEMS = 10_000;
 export const DEFAULT_MAX_PAGINATION_PAGES = 1_000;
+
+/**
+ * Upper bound (in seconds) honoured for a server-provided `Retry-After`
+ * header. Anything larger is clamped so an untrusted value cannot stall the
+ * client on an unbounded timer (DoS guard). 300s = the resulting delay caps
+ * at 300_000 ms.
+ */
+export const MAX_RETRY_AFTER_SECONDS = 300;
 
 export class GraphClient {
   private axios: AxiosInstance;
@@ -117,7 +126,12 @@ export class GraphClient {
   private updateRateLimitInfo(response: AxiosResponse): void {
     const retryAfter = response.headers["retry-after"];
     if (retryAfter) {
-      this.rateLimitDelay = parseInt(retryAfter, 10) * 1000;
+      // `Retry-After` is attacker-influenced: a hostile or buggy server can
+      // send a huge value ("999999999") that would otherwise schedule a
+      // multi-year setTimeout and hang the process. Parse safely, drop
+      // NaN/negative values (treated as no delay), and clamp to 300s.
+      this.rateLimitDelay =
+        parsePositiveInt(retryAfter, 0, MAX_RETRY_AFTER_SECONDS) * 1000;
     } else {
       this.rateLimitDelay = 0;
     }
