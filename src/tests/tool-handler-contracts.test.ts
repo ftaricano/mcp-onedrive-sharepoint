@@ -332,7 +332,8 @@ test("list_site_lists handler returns centralized MCP contract on success", asyn
             name: "Documents",
             displayName: "Documents",
             description: "Shared documents",
-            webUrl: "https://contoso.sharepoint.com/sites/finance/Lists/Documents",
+            webUrl:
+              "https://contoso.sharepoint.com/sites/finance/Lists/Documents",
             createdDateTime: "2026-04-01T00:00:00.000Z",
             lastModifiedDateTime: "2026-04-10T00:00:00.000Z",
             list: {

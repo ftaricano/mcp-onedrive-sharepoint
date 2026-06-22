@@ -55,7 +55,8 @@ test("MSAL cache plugin persists serialized cache snapshots across executions", 
   await plugin.afterCacheAccess({
     cacheHasChanged: true,
     tokenCache: {
-      serialize: () => JSON.stringify({ Account: { abc: { username: "user@example.com" } } }),
+      serialize: () =>
+        JSON.stringify({ Account: { abc: { username: "user@example.com" } } }),
       deserialize: () => undefined,
     },
   } as unknown as AfterCacheContext);
@@ -170,7 +171,11 @@ test("expired access tokens are silently refreshed when MSAL account state is av
       getAllAccounts: async () => [account],
       removeAccount: async () => undefined,
     }),
-    acquireTokenSilent: async ({ account: requestedAccount }: { account: typeof account }) => {
+    acquireTokenSilent: async ({
+      account: requestedAccount,
+    }: {
+      account: typeof account;
+    }) => {
       silentCalls += 1;
       assert.equal(requestedAccount.username, "user@example.com");
 

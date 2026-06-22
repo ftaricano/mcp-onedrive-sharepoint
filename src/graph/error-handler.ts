@@ -87,7 +87,9 @@ export class GraphApiError extends Error {
 
     // Authentication and authorization errors
     if (
-      AUTH_ERRORS.some((errorCode) => errorCode.toLowerCase() === normalizedCode) ||
+      AUTH_ERRORS.some(
+        (errorCode) => errorCode.toLowerCase() === normalizedCode,
+      ) ||
       statusCode === 401
     ) {
       return {
@@ -102,7 +104,8 @@ export class GraphApiError extends Error {
     if (
       PERMISSION_ERRORS.some(
         (errorCode) => errorCode.toLowerCase() === normalizedCode,
-      ) || statusCode === 403
+      ) ||
+      statusCode === 403
     ) {
       return {
         category: "Permission",
@@ -117,7 +120,8 @@ export class GraphApiError extends Error {
     if (
       NOT_FOUND_ERRORS.some(
         (errorCode) => errorCode.toLowerCase() === normalizedCode,
-      ) || statusCode === 404
+      ) ||
+      statusCode === 404
     ) {
       return {
         category: "NotFound",
@@ -132,7 +136,8 @@ export class GraphApiError extends Error {
     if (
       THROTTLING_ERRORS.some(
         (errorCode) => errorCode.toLowerCase() === normalizedCode,
-      ) || statusCode === 429
+      ) ||
+      statusCode === 429
     ) {
       return {
         category: "Throttling",
@@ -145,7 +150,9 @@ export class GraphApiError extends Error {
 
     // Quota and capacity errors
     if (
-      QUOTA_ERRORS.some((errorCode) => errorCode.toLowerCase() === normalizedCode) ||
+      QUOTA_ERRORS.some(
+        (errorCode) => errorCode.toLowerCase() === normalizedCode,
+      ) ||
       statusCode === 507
     ) {
       return {
@@ -161,7 +168,8 @@ export class GraphApiError extends Error {
     if (
       VALIDATION_ERRORS.some(
         (errorCode) => errorCode.toLowerCase() === normalizedCode,
-      ) || statusCode === 400
+      ) ||
+      statusCode === 400
     ) {
       return {
         category: "Validation",
@@ -175,7 +183,8 @@ export class GraphApiError extends Error {
     if (
       CONFLICT_ERRORS.some(
         (errorCode) => errorCode.toLowerCase() === normalizedCode,
-      ) || statusCode === 409
+      ) ||
+      statusCode === 409
     ) {
       return {
         category: "Conflict",
@@ -188,7 +197,9 @@ export class GraphApiError extends Error {
 
     // Server and service errors
     if (
-      SERVER_ERRORS.some((errorCode) => errorCode.toLowerCase() === normalizedCode) ||
+      SERVER_ERRORS.some(
+        (errorCode) => errorCode.toLowerCase() === normalizedCode,
+      ) ||
       (statusCode && statusCode >= 500)
     ) {
       return {
@@ -202,7 +213,9 @@ export class GraphApiError extends Error {
 
     // Network and connectivity errors
     if (
-      NETWORK_ERRORS.some((errorCode) => errorCode.toLowerCase() === normalizedCode)
+      NETWORK_ERRORS.some(
+        (errorCode) => errorCode.toLowerCase() === normalizedCode,
+      )
     ) {
       return {
         category: "Network",

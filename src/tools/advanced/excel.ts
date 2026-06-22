@@ -10,6 +10,14 @@ import { DriveItem, WorkbookSession } from "../../graph/models.js";
 import { getDriveRootEndpoint } from "../../graph/resource-resolver.js";
 import { resolveDriveTargetContext } from "../../sharepoint/site-resolver.js";
 
+function workbookPathSegment(value: string): string {
+  return encodeURIComponent(value);
+}
+
+function workbookRangeAddress(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
 // Tool 1: Excel workbook operations
 export const excelOperations: Tool = {
   name: "excel_operations",
@@ -129,7 +137,12 @@ export async function handleExcelOperations(args: any) {
       useSession = false,
     } = args;
     const { siteId, driveId } = await resolveDriveTargetContext(
-      { site: args.site, siteId: args.siteId, siteUrl: args.siteUrl, driveId: args.driveId },
+      {
+        site: args.site,
+        siteId: args.siteId,
+        siteUrl: args.siteUrl,
+        driveId: args.driveId,
+      },
       client,
     );
 
@@ -154,6 +167,7 @@ export async function handleExcelOperations(args: any) {
 
     // Base endpoint for workbook operations
     const workbookBase = `${driveRoot}/items/${actualItemId}/workbook`;
+    const worksheetPath = workbookPathSegment(worksheet);
 
     // Create session if requested
     let sessionId: string | undefined;
@@ -182,7 +196,7 @@ export async function handleExcelOperations(args: any) {
             throw new Error("Range is required for read_range operation");
           }
 
-          const endpoint = `${workbookBase}/worksheets/${worksheet}/range(address='${range}')`;
+          const endpoint = `${workbookBase}/worksheets/${worksheetPath}/range(address='${workbookRangeAddress(range)}')`;
           const response = await client.get<any>(endpoint, {}, { headers });
 
           if (response.success && response.data) {
@@ -211,7 +225,7 @@ export async function handleExcelOperations(args: any) {
             );
           }
 
-          const endpoint = `${workbookBase}/worksheets/${worksheet}/range(address='${range}')`;
+          const endpoint = `${workbookBase}/worksheets/${worksheetPath}/range(address='${workbookRangeAddress(range)}')`;
           const response = await client.patch<any>(
             endpoint,
             { values },
@@ -287,7 +301,7 @@ export async function handleExcelOperations(args: any) {
             throw new Error("Range is required for get_formulas operation");
           }
 
-          const endpoint = `${workbookBase}/worksheets/${worksheet}/range(address='${range}')`;
+          const endpoint = `${workbookBase}/worksheets/${worksheetPath}/range(address='${workbookRangeAddress(range)}')`;
           const response = await client.get<any>(
             endpoint,
             {
@@ -317,7 +331,7 @@ export async function handleExcelOperations(args: any) {
             );
           }
 
-          const endpoint = `${workbookBase}/worksheets/${worksheet}/range(address='${range}')`;
+          const endpoint = `${workbookBase}/worksheets/${worksheetPath}/range(address='${workbookRangeAddress(range)}')`;
           const response = await client.patch<any>(
             endpoint,
             { formulas },
@@ -344,7 +358,7 @@ export async function handleExcelOperations(args: any) {
             );
           }
 
-          const endpoint = `${workbookBase}/worksheets/${worksheet}/tables/add`;
+          const endpoint = `${workbookBase}/worksheets/${worksheetPath}/tables/add`;
           const response = await client.post<any>(
             endpoint,
             {
@@ -389,7 +403,7 @@ export async function handleExcelOperations(args: any) {
             );
           }
 
-          const endpoint = `${workbookBase}/worksheets/${worksheet}/charts/add`;
+          const endpoint = `${workbookBase}/worksheets/${worksheetPath}/charts/add`;
           const response = await client.post<any>(
             endpoint,
             {
@@ -514,7 +528,12 @@ export async function handleExcelAnalysis(args: any) {
       range,
     } = args;
     const { siteId, driveId } = await resolveDriveTargetContext(
-      { site: args.site, siteId: args.siteId, siteUrl: args.siteUrl, driveId: args.driveId },
+      {
+        site: args.site,
+        siteId: args.siteId,
+        siteUrl: args.siteUrl,
+        driveId: args.driveId,
+      },
       client,
     );
 
@@ -539,13 +558,14 @@ export async function handleExcelAnalysis(args: any) {
 
     // Base endpoint for workbook operations
     const workbookBase = `${driveRoot}/items/${actualItemId}/workbook`;
+    const worksheetPath = workbookPathSegment(worksheet);
 
     switch (analysisType) {
       case "statistics": {
         // Get the range to analyze
         const rangeEndpoint = range
-          ? `${workbookBase}/worksheets/${worksheet}/range(address='${range}')`
-          : `${workbookBase}/worksheets/${worksheet}/usedRange`;
+          ? `${workbookBase}/worksheets/${worksheetPath}/range(address='${workbookRangeAddress(range)}')`
+          : `${workbookBase}/worksheets/${worksheetPath}/usedRange`;
 
         const rangeResponse = await client.get<any>(rangeEndpoint);
 
@@ -611,7 +631,7 @@ export async function handleExcelAnalysis(args: any) {
 
       case "pivot_summary": {
         // Get pivot tables in the workbook
-        const pivotEndpoint = `${workbookBase}/worksheets/${worksheet}/pivotTables`;
+        const pivotEndpoint = `${workbookBase}/worksheets/${worksheetPath}/pivotTables`;
         const pivotResponse = await client.get<any>(pivotEndpoint);
 
         if (pivotResponse.success && pivotResponse.data) {
@@ -619,7 +639,7 @@ export async function handleExcelAnalysis(args: any) {
 
           const summaries = await Promise.all(
             pivotTables.map(async (pivot: any) => {
-              const refreshEndpoint = `${workbookBase}/worksheets/${worksheet}/pivotTables/${pivot.id}/refresh`;
+              const refreshEndpoint = `${workbookBase}/worksheets/${worksheetPath}/pivotTables/${pivot.id}/refresh`;
               await client.post(refreshEndpoint, {});
 
               return {
@@ -643,8 +663,8 @@ export async function handleExcelAnalysis(args: any) {
       case "data_validation": {
         // Get data validation rules
         const validationEndpoint = range
-          ? `${workbookBase}/worksheets/${worksheet}/range(address='${range}')/dataValidation`
-          : `${workbookBase}/worksheets/${worksheet}/usedRange/dataValidation`;
+          ? `${workbookBase}/worksheets/${worksheetPath}/range(address='${workbookRangeAddress(range)}')/dataValidation`
+          : `${workbookBase}/worksheets/${worksheetPath}/usedRange/dataValidation`;
 
         const validationResponse = await client.get<any>(validationEndpoint);
 
@@ -694,7 +714,7 @@ export async function handleExcelAnalysis(args: any) {
 
       case "used_range": {
         // Get the used range of the worksheet
-        const usedRangeEndpoint = `${workbookBase}/worksheets/${worksheet}/usedRange`;
+        const usedRangeEndpoint = `${workbookBase}/worksheets/${worksheetPath}/usedRange`;
         const usedRangeResponse = await client.get<any>(usedRangeEndpoint);
 
         if (usedRangeResponse.success && usedRangeResponse.data) {

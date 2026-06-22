@@ -19,4 +19,16 @@ if [[ -f "$REPO_ROOT/.env" ]]; then
   set +o allexport
 fi
 
+# Política "sempre Keychain" (Ferd 2026-06-09): o SP_CLIENT_SECRET vem do Keychain
+# com PRECEDÊNCIA sobre o .env — a rotação pós-leak (2026-06-05) atualiza o Keychain,
+# não o .env, então confiar no .env usa um secret revogado (AADSTS7000215). Com o
+# secret presente o cli.js usa client_credentials (app-only, sem device code).
+# Fallback: se o Keychain não tiver o item, mantém o que veio do .env.
+__ods_kc_secret="$(security find-generic-password -s 'cpz::SP_CLIENT_SECRET' -w "$HOME/Library/Keychains/login.keychain-db" 2>/dev/null || true)"
+if [[ -n "${__ods_kc_secret:-}" ]]; then
+  export SP_CLIENT_SECRET="$__ods_kc_secret"
+  export MICROSOFT_GRAPH_CLIENT_SECRET="$__ods_kc_secret"
+fi
+unset __ods_kc_secret
+
 exec node "$REPO_ROOT/build/cli.js" "$@"

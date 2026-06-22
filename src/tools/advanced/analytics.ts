@@ -88,7 +88,12 @@ export async function handleStorageAnalytics(args: any) {
       includeVersions = false,
     } = args;
     const { siteId, driveId } = await resolveDriveTargetContext(
-      { site: args.site, siteId: args.siteId, siteUrl: args.siteUrl, driveId: args.driveId },
+      {
+        site: args.site,
+        siteId: args.siteId,
+        siteUrl: args.siteUrl,
+        driveId: args.driveId,
+      },
       client,
     );
 
@@ -494,7 +499,12 @@ export async function handleVersionManagement(args: any) {
       compareVersionId,
     } = args;
     const { siteId, driveId } = await resolveDriveTargetContext(
-      { site: args.site, siteId: args.siteId, siteUrl: args.siteUrl, driveId: args.driveId },
+      {
+        site: args.site,
+        siteId: args.siteId,
+        siteUrl: args.siteUrl,
+        driveId: args.driveId,
+      },
       client,
     );
 
@@ -599,6 +609,12 @@ export async function handleVersionManagement(args: any) {
       }
 
       case "cleanup": {
+        if (!Number.isInteger(keepVersions) || keepVersions < 1) {
+          throw new Error(
+            "keepVersions must be an integer greater than or equal to 1",
+          );
+        }
+
         const versionsEndpoint = `${baseEndpoint}/versions`;
         const listResponse = await client.get<any>(versionsEndpoint);
 

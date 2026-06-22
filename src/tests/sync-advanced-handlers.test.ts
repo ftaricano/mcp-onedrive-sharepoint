@@ -53,11 +53,11 @@ test("sync_folder covers upload conflict resolution branches", async () => {
       expectConflict: false,
     },
     {
-      name: "rename records conflict instead of uploading",
+      name: "rename uploads a renamed local copy",
       conflictResolution: "rename",
       remoteModified: "2026-04-14T18:00:00.000Z",
       localModified: new Date("2026-04-14T20:00:00.000Z"),
-      expectUpload: false,
+      expectUpload: true,
       expectConflict: true,
     },
   ] as const;
@@ -120,13 +120,22 @@ test("sync_folder covers upload conflict resolution branches", async () => {
       if (scenario.expectUpload) {
         const [uploadEndpoint, uploadPath, uploadName, options] =
           mock.methodCalls("uploadFile")[0].args;
-        assert.equal(
-          uploadEndpoint,
-          "/me/drive/root:/Docs/report.txt:/content",
-        );
+        if (scenario.conflictResolution === "rename") {
+          assert.match(
+            uploadEndpoint,
+            /^\/me\/drive\/root:\/Docs\/report_local_\d+\.txt:\/content$/,
+          );
+          assert.match(uploadName, /^report_local_\d+\.txt$/);
+          assert.deepEqual(options, { conflictBehavior: "rename" });
+        } else {
+          assert.equal(
+            uploadEndpoint,
+            "/me/drive/root:/Docs/report.txt:/content",
+          );
+          assert.equal(uploadName, "report.txt");
+          assert.deepEqual(options, { conflictBehavior: "replace" });
+        }
         assert.equal(uploadPath, localFilePath);
-        assert.equal(uploadName, "report.txt");
-        assert.deepEqual(options, { conflictBehavior: "replace" });
       }
 
       if (scenario.expectConflict) {
@@ -168,11 +177,11 @@ test("sync_folder covers download conflict resolution branches", async () => {
       expectConflict: false,
     },
     {
-      name: "rename records conflict instead of overwriting local file",
+      name: "rename downloads a renamed remote copy",
       conflictResolution: "rename",
       remoteModified: "2026-04-14T20:00:00.000Z",
       localModified: new Date("2026-04-14T10:00:00.000Z"),
-      expectDownload: false,
+      expectDownload: true,
       expectConflict: true,
     },
   ] as const;
@@ -232,7 +241,19 @@ test("sync_folder covers download conflict resolution branches", async () => {
       );
 
       if (scenario.expectDownload) {
-        assert.equal(readFileSync(localFilePath, "utf8"), "remote-buffer");
+        if (scenario.conflictResolution === "rename") {
+          const renamed = readdirSync(localPath).find((name) =>
+            /^report_remote_\d+\.txt$/.test(name),
+          );
+          assert.ok(renamed);
+          assert.equal(
+            readFileSync(path.join(localPath, renamed), "utf8"),
+            "remote-buffer",
+          );
+          assert.equal(readFileSync(localFilePath, "utf8"), "old-local");
+        } else {
+          assert.equal(readFileSync(localFilePath, "utf8"), "remote-buffer");
+        }
         assert.equal(
           mock.methodCalls("downloadFile")[0].args[0],
           "/me/drive/items/remote-1/content",
@@ -702,4 +723,73 @@ test("batch_file_operations validates batch size and empty operations", async ()
     oversizedResponse.content[0].text,
     /Maximum 50 operations allowed per batch/,
   );
+});
+
+test("batch_file_operations refuses local paths outside MCP_LOCAL_FILE_ROOT", async () => {
+  // Sandbox root; the out-of-root targets live in a sibling temp dir so the
+  // sandbox boundary check is what rejects them, not mere non-existence.
+  const root = createTempDir("batch-ops-sandbox-root-");
+  const outside = createTempDir("batch-ops-outside-root-");
+  const previousRoot = process.env.MCP_LOCAL_FILE_ROOT;
+  process.env.MCP_LOCAL_FILE_ROOT = root;
+
+  try {
+    const outsideSource = path.join(outside, "secret.txt");
+    writeFileSync(outsideSource, "exfiltrate-me");
+    const outsideDestination = path.join(outside, "leak.txt");
+
+    const mock = createMockGraphClient({
+      uploadFile: async () => ({ success: true, data: { id: "uploaded-1" } }),
+      downloadFile: async () => ({
+        success: true,
+        data: Buffer.from("remote-bytes"),
+      }),
+    });
+    __setGraphClientInstanceForTests(mock.client as any);
+
+    const response = (await handleBatchFileOperations({
+      operations: [
+        // upload: op.source is LOCAL and outside the root -> refused before
+        // any uploadFile call.
+        {
+          operation: "upload",
+          source: outsideSource,
+          destination: "Docs/uploaded.txt",
+        },
+        // download: op.destination is LOCAL and outside the root -> refused
+        // after the (mocked) download, before writing to disk.
+        {
+          operation: "download",
+          source: "Docs/server.txt",
+          destination: outsideDestination,
+          itemId: "download-id",
+        },
+      ],
+      stopOnError: false,
+    })) as ToolEnvelope;
+    const payload = parsePayload<any>(response);
+
+    assert.equal(payload.success, false);
+    assert.equal(payload.summary.total, 2);
+    assert.equal(payload.summary.successful, 0);
+    assert.equal(payload.summary.failed, 2);
+
+    assert.equal(payload.results[0].status, "failed");
+    assert.match(payload.results[0].error, /outside MCP_LOCAL_FILE_ROOT/);
+    assert.equal(payload.results[1].status, "failed");
+    assert.match(payload.results[1].error, /outside MCP_LOCAL_FILE_ROOT/);
+
+    // Hard guarantee: the out-of-root upload never reached the network and the
+    // out-of-root download never hit the filesystem.
+    assert.equal(mock.methodCalls("uploadFile").length, 0);
+    assert.equal(existsSync(outsideDestination), false);
+  } finally {
+    if (previousRoot === undefined) {
+      delete process.env.MCP_LOCAL_FILE_ROOT;
+    } else {
+      process.env.MCP_LOCAL_FILE_ROOT = previousRoot;
+    }
+    cleanupTempDir(root);
+    cleanupTempDir(outside);
+  }
 });

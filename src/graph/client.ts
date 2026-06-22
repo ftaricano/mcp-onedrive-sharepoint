@@ -46,10 +46,15 @@ export interface PaginationOptions extends RequestOptions {
 export const DEFAULT_MAX_PAGINATION_ITEMS = 10_000;
 export const DEFAULT_MAX_PAGINATION_PAGES = 1_000;
 
-export class GraphClient {
-  /** Upper bound (seconds) honoured from a Retry-After header. */
-  private static readonly MAX_RETRY_AFTER_SECONDS = 300;
+/**
+ * Upper bound (in seconds) honoured for a server-provided `Retry-After`
+ * header. Anything larger is clamped so an untrusted value cannot stall the
+ * client on an unbounded timer (DoS guard). 300s = the resulting delay caps
+ * at 300_000 ms.
+ */
+export const MAX_RETRY_AFTER_SECONDS = 300;
 
+export class GraphClient {
   private axios: AxiosInstance;
   private sessionCache: Map<string, WorkbookSession> = new Map();
   private rateLimitDelay = 0;
@@ -121,15 +126,12 @@ export class GraphClient {
   private updateRateLimitInfo(response: AxiosResponse): void {
     const retryAfter = response.headers["retry-after"];
     if (retryAfter) {
-      // Retry-After is in seconds. Guard against a malformed (NaN) or hostile
-      // (huge) header value that would otherwise break the wait logic or hang
-      // the process. Cap the wait at MAX_RETRY_AFTER_SECONDS.
-      const seconds = parsePositiveInt(
-        retryAfter,
-        0,
-        GraphClient.MAX_RETRY_AFTER_SECONDS,
-      );
-      this.rateLimitDelay = seconds * 1000;
+      // `Retry-After` is attacker-influenced: a hostile or buggy server can
+      // send a huge value ("999999999") that would otherwise schedule a
+      // multi-year setTimeout and hang the process. Parse safely, drop
+      // NaN/negative values (treated as no delay), and clamp to 300s.
+      this.rateLimitDelay =
+        parsePositiveInt(retryAfter, 0, MAX_RETRY_AFTER_SECONDS) * 1000;
     } else {
       this.rateLimitDelay = 0;
     }
@@ -346,7 +348,8 @@ export class GraphClient {
     const fileSize = stats.size;
 
     // Create upload session
-    const sessionUrl = endpoint.replace(/\/content$/, "") + "/createUploadSession";
+    const sessionUrl =
+      endpoint.replace(/\/content$/, "") + "/createUploadSession";
     const sessionData = {
       item: {
         "@microsoft.graph.conflictBehavior":

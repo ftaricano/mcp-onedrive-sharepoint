@@ -6,13 +6,15 @@
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { getGraphClient } from "../../graph/client.js";
 import { jsonTextResponse, toolErrorResponse } from "../../graph/contracts.js";
-import { DriveItem, UploadSession } from "../../graph/models.js";
 import { createUserFriendlyError } from "../../graph/error-handler.js";
 import { getDriveRootEndpoint } from "../../graph/resource-resolver.js";
 import { resolveDriveTargetContext } from "../../sharepoint/site-resolver.js";
+import {
+  ensureParentDirectory,
+  resolveLocalPath,
+} from "../../utils/local-path.js";
 import * as fs from "fs";
 import * as path from "path";
-import * as crypto from "crypto";
 
 // Tool 1: Sync folder (bidirectional)
 export const syncFolder: Tool = {
@@ -92,7 +94,12 @@ export async function handleSyncFolder(args: any) {
       deleteOrphans = false,
     } = args;
     const { siteId, driveId } = await resolveDriveTargetContext(
-      { site: args.site, siteId: args.siteId, siteUrl: args.siteUrl, driveId: args.driveId },
+      {
+        site: args.site,
+        siteId: args.siteId,
+        siteUrl: args.siteUrl,
+        driveId: args.driveId,
+      },
       client,
     );
 
@@ -107,31 +114,45 @@ export async function handleSyncFolder(args: any) {
       deleted: [] as any[],
     };
 
+    const safeLocalPath = resolveLocalPath(localPath);
+
     // Validate local path
-    if (!fs.existsSync(localPath)) {
+    if (!fs.existsSync(safeLocalPath)) {
       if (direction === "upload") {
-        throw new Error(`Local path does not exist: ${localPath}`);
+        throw new Error(`Local path does not exist: ${safeLocalPath}`);
       } else {
         // Create local directory for download
-        fs.mkdirSync(localPath, { recursive: true });
+        fs.mkdirSync(safeLocalPath, { recursive: true });
       }
     }
 
     // Get remote folder contents
     const remoteEndpoint = `${driveRoot}/root:/${remotePath}:/children`;
 
-    const remoteResponse = await client.get<any>(remoteEndpoint, {
+    const remoteItems: any[] = [];
+    let nextEndpoint: string | undefined = remoteEndpoint;
+    let nextParams: Record<string, string> | undefined = {
       $select: "id,name,size,lastModifiedDateTime,file,folder",
       $top: "1000",
-    });
+    };
 
-    const remoteItems =
-      remoteResponse.success && remoteResponse.data
-        ? (remoteResponse.data as any).value || []
-        : [];
+    while (nextEndpoint) {
+      const remoteResponse: any = await client.get<any>(
+        nextEndpoint,
+        nextParams,
+      );
+
+      if (!remoteResponse.success || !remoteResponse.data) {
+        break;
+      }
+
+      remoteItems.push(...((remoteResponse.data as any).value || []));
+      nextEndpoint = (remoteResponse.data as any)["@odata.nextLink"];
+      nextParams = undefined;
+    }
 
     // Get local folder contents
-    const localItems = fs.readdirSync(localPath, { withFileTypes: true });
+    const localItems = fs.readdirSync(safeLocalPath, { withFileTypes: true });
 
     // Create maps for comparison
     const remoteMap = new Map(
@@ -179,7 +200,9 @@ export async function handleSyncFolder(args: any) {
           continue;
         }
 
-        const localFilePath = path.join(localPath, filename);
+        const localFilePath = resolveLocalPath(
+          path.join(safeLocalPath, filename),
+        );
         const localStats = fs.statSync(localFilePath);
         const remoteItem = remoteMap.get(filename);
 
@@ -203,35 +226,42 @@ export async function handleSyncFolder(args: any) {
             case "newer":
               shouldUpload = localModified > remoteModified;
               break;
-            case "rename":
-              // Upload with new name
+            case "rename": {
               const baseName = path.basename(filename, path.extname(filename));
               const ext = path.extname(filename);
               const newName = `${baseName}_local_${Date.now()}${ext}`;
-              // Upload logic with new name would go here
               syncResults.conflicts.push({
                 name: filename,
                 resolution: "renamed",
                 newName,
               });
-              continue;
+              shouldUpload = true;
+              break;
+            }
           }
         }
 
         if (shouldUpload) {
           try {
-            const uploadEndpoint = `${driveRoot}/root:/${remotePath}/${filename}:/content`;
+            const uploadName =
+              conflictResolution === "rename" && remoteItem
+                ? `${path.basename(filename, path.extname(filename))}_local_${Date.now()}${path.extname(filename)}`
+                : filename;
+            const uploadEndpoint = `${driveRoot}/root:/${remotePath}/${uploadName}:/content`;
 
             const uploadResponse = await client.uploadFile(
               uploadEndpoint,
               localFilePath,
-              filename,
-              { conflictBehavior: "replace" },
+              uploadName,
+              {
+                conflictBehavior:
+                  conflictResolution === "rename" ? "rename" : "replace",
+              },
             );
 
             if (uploadResponse.success) {
               syncResults.uploaded.push({
-                name: filename,
+                name: uploadName,
                 size: localStats.size,
                 localPath: localFilePath,
               });
@@ -276,7 +306,9 @@ export async function handleSyncFolder(args: any) {
           continue;
         }
 
-        const localFilePath = path.join(localPath, filename);
+        let localFilePath = resolveLocalPath(
+          path.join(safeLocalPath, filename),
+        );
         const localExists = fs.existsSync(localFilePath);
 
         // Determine if download is needed
@@ -298,19 +330,21 @@ export async function handleSyncFolder(args: any) {
             case "newer":
               shouldDownload = remoteModified > localModified;
               break;
-            case "rename":
-              // Download with new name
+            case "rename": {
               const baseName = path.basename(filename, path.extname(filename));
               const ext = path.extname(filename);
               const newName = `${baseName}_remote_${Date.now()}${ext}`;
-              const newPath = path.join(localPath, newName);
-              // Download logic with new name would go here
+              localFilePath = resolveLocalPath(
+                path.join(safeLocalPath, newName),
+              );
               syncResults.conflicts.push({
                 name: filename,
                 resolution: "renamed",
                 newName,
               });
-              continue;
+              shouldDownload = true;
+              break;
+            }
           }
         }
 
@@ -322,6 +356,7 @@ export async function handleSyncFolder(args: any) {
               await client.downloadFile(downloadEndpoint);
 
             if (downloadResponse.success && downloadResponse.data) {
+              ensureParentDirectory(localFilePath);
               fs.writeFileSync(localFilePath, downloadResponse.data as Buffer);
 
               // Preserve modification time
@@ -351,7 +386,9 @@ export async function handleSyncFolder(args: any) {
       if (direction === "download" || direction === "bidirectional") {
         for (const localItem of localItems) {
           if (!remoteMap.has(localItem.name)) {
-            const localFilePath = path.join(localPath, localItem.name);
+            const localFilePath = resolveLocalPath(
+              path.join(safeLocalPath, localItem.name),
+            );
             try {
               if (localItem.isDirectory()) {
                 fs.rmSync(localFilePath, { recursive: true });
@@ -496,7 +533,12 @@ export async function handleBatchFileOperations(args: any) {
     const client = getGraphClient();
     const { operations, stopOnError = false, parallel = false } = args;
     const { siteId, driveId } = await resolveDriveTargetContext(
-      { site: args.site, siteId: args.siteId, siteUrl: args.siteUrl, driveId: args.driveId },
+      {
+        site: args.site,
+        siteId: args.siteId,
+        siteUrl: args.siteUrl,
+        driveId: args.driveId,
+      },
       client,
     );
 
@@ -527,11 +569,15 @@ export async function handleBatchFileOperations(args: any) {
               throw new Error("Source and destination required for upload");
             }
 
+            // op.source is a LOCAL file read from disk -> sandbox it.
+            // op.destination is a REMOTE Graph path -> leave raw.
+            const safeSource = resolveLocalPath(op.source, { mustExist: true });
+
             const uploadEndpoint = `${driveRoot}/root:/${op.destination}:/content`;
 
             const response = await client.uploadFile(
               uploadEndpoint,
-              op.source,
+              safeSource,
               path.basename(op.destination),
               { conflictBehavior: "rename" },
             );
@@ -548,6 +594,8 @@ export async function handleBatchFileOperations(args: any) {
               throw new Error("Source and destination required for download");
             }
 
+            // op.source is a REMOTE Graph path -> leave raw.
+            // op.destination is a LOCAL file written to disk -> sandbox it.
             const downloadEndpoint = op.itemId
               ? `${driveRoot}/items/${op.itemId}/content`
               : `${driveRoot}/root:/${op.source}:/content`;
@@ -555,7 +603,8 @@ export async function handleBatchFileOperations(args: any) {
             const response = await client.downloadFile(downloadEndpoint);
 
             if (response.success && response.data) {
-              fs.writeFileSync(op.destination, response.data as Buffer);
+              const safeDestination = resolveLocalPath(op.destination);
+              fs.writeFileSync(safeDestination, response.data as Buffer);
               result.success = true;
               result.size = (response.data as Buffer).length;
             }

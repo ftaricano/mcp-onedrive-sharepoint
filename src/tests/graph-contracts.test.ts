@@ -201,7 +201,10 @@ test("GraphClient.get throws when Graph returns a fulfilled response containing 
     return true;
   });
 
-  assert.equal(metadataCache.get(`${endpoint}:${JSON.stringify(params)}`), null);
+  assert.equal(
+    metadataCache.get(`${endpoint}:${JSON.stringify(params)}`),
+    null,
+  );
 });
 
 test("GraphClient.get preserves success payloads", async () => {
