@@ -17,11 +17,18 @@ export async function bootstrap(): Promise<void> {
     initializeAuth(config.auth);
 
     const auth = getAuthInstance();
-    const cachedUser = await auth.getCurrentUser();
-    if (!cachedUser) {
-      throw new Error(
-        "Authentication required. Run `npm run setup-auth` before calling tools.",
-      );
+    if (config.auth.clientSecret) {
+      // App-identity (client credentials) mode: there is no interactive user
+      // cached in the keychain, so acquire the app token directly instead of
+      // demanding a device-code login that does not apply.
+      await auth.getAccessToken();
+    } else {
+      const cachedUser = await auth.getCurrentUser();
+      if (!cachedUser) {
+        throw new Error(
+          "Authentication required. Run `npm run setup-auth` before calling tools.",
+        );
+      }
     }
 
     getGraphClient();

@@ -92,6 +92,8 @@ Every MCP tool is also exposed as a plain subcommand through the `ods` CLI. It s
 
 ```bash
 npm run build
+# `npm install` does NOT put `ods` on your PATH. Link it once, e.g.:
+#   npm link            # or: ln -s "$PWD/scripts/ods.sh" ~/bin/ods
 ods list                                  # list all tools with descriptions
 ods schema list_files                     # print JSON schema for a tool
 ods auth                                  # interactive device-code login
