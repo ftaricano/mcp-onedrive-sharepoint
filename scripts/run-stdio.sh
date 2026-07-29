@@ -10,4 +10,8 @@ if [[ ! -f "$REPO_ROOT/build/index.js" ]]; then
   exit 1
 fi
 
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/onepassword-graph-env.sh"
+load_graph_client_secret
+
 exec node "$SCRIPT_DIR/exec-with-env.mjs" node "$REPO_ROOT/build/index.js"

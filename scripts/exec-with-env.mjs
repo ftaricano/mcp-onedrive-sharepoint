@@ -27,6 +27,9 @@ if (fs.existsSync(envPath)) {
   }
 }
 
+delete fileEnv.MICROSOFT_GRAPH_CLIENT_SECRET;
+delete fileEnv.SP_CLIENT_SECRET;
+
 const child = spawn(argv[0], argv.slice(1), {
   cwd: repoRoot,
   env: {

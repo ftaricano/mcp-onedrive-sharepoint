@@ -150,10 +150,13 @@ Notes:
 
 ### Client credentials (recommended for automation)
 
-Set `MICROSOFT_GRAPH_CLIENT_SECRET` (or the alias `SP_CLIENT_SECRET`) in the environment. When either variable is present, the server authenticates as the app identity — no user login, no token expiry issue, no Keychain MSAL cache needed.
+Operational wrappers resolve `cpz::SP_CLIENT_SECRET` through the JarvisHub
+1Password-only helper. An explicitly injected ephemeral
+`MICROSOFT_GRAPH_CLIENT_SECRET` or `SP_CLIENT_SECRET` takes precedence. App
+identity authentication avoids user login and MSAL Keychain cache access.
 
 ```bash
-# In .env or via cpz_keychain_env.sh / Keychain:
+# Non-secret config may stay in .env; the client secret comes from 1Password:
 MICROSOFT_GRAPH_CLIENT_ID=your_app_client_id
 MICROSOFT_GRAPH_TENANT_ID=your_tenant_uuid   # must be specific UUID, not "common"
 MICROSOFT_GRAPH_CLIENT_SECRET=your_client_secret
