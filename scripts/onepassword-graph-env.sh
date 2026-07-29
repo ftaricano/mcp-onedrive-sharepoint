@@ -8,14 +8,18 @@ load_graph_environment() {
     PYTHONPATH="${hub}/scripts/infra${PYTHONPATH:+:${PYTHONPATH}}" \
       python3 -c '
 import json
+import os
 from cpz_keychain import get_item
 
 items = {
-    "MICROSOFT_GRAPH_CLIENT_ID": "SP_CLIENT_ID",
-    "MICROSOFT_GRAPH_CLIENT_SECRET": "SP_CLIENT_SECRET",
-    "MICROSOFT_GRAPH_TENANT_ID": "SP_TENANT_ID",
+    "MICROSOFT_GRAPH_CLIENT_ID": "cpz::SP_CLIENT_ID",
+    "MICROSOFT_GRAPH_CLIENT_SECRET": "cpz::SP_CLIENT_SECRET",
+    "MICROSOFT_GRAPH_TENANT_ID": "cpz::SP_TENANT_ID",
 }
-values = {name: get_item(item) for name, item in items.items()}
+values = {
+    name: os.environ.get(name) or get_item(item)
+    for name, item in items.items()
+}
 missing = [name for name, value in values.items() if not value]
 if missing:
     raise SystemExit("1Password did not resolve " + ", ".join(missing))
