@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Thin wrapper so `ods` can live on $PATH via symlink (e.g. ~/bin/ods).
-# Loads non-secret repo config and invokes build/cli.js.
+# Resolves Graph configuration from 1Password and invokes build/cli.js.
 set -euo pipefail
 
 SCRIPT_PATH="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${BASH_SOURCE[0]}")"
@@ -12,8 +12,4 @@ if [[ ! -f "$REPO_ROOT/build/cli.js" ]]; then
   exit 1
 fi
 
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/onepassword-graph-env.sh"
-load_graph_client_secret
-
-exec node "$SCRIPT_DIR/exec-with-env.mjs" node "$REPO_ROOT/build/cli.js" "$@"
+exec "$SCRIPT_DIR/with-onepassword-graph-env.sh" node "$REPO_ROOT/build/cli.js" "$@"

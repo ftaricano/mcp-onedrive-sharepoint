@@ -2,10 +2,7 @@
  * Configuration management for MCP OneDrive/SharePoint Server
  */
 
-import * as dotenv from "dotenv";
 import { DEFAULT_SCOPES } from "./scopes.js";
-
-dotenv.config();
 
 export interface AuthConfig {
   clientId: string;
@@ -60,7 +57,7 @@ export function loadConfig(): ServerConfig {
 export function validateConfig(config: ServerConfig): void {
   if (!config.auth.clientId) {
     throw new Error(
-      "Missing MICROSOFT_GRAPH_CLIENT_ID environment variable. Run npm run setup-auth or set it in your environment/.env file.",
+      "Missing MICROSOFT_GRAPH_CLIENT_ID. Start through an npm command or packaged bin so the 1Password launcher can inject it.",
     );
   }
 

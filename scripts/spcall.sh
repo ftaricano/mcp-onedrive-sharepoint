@@ -48,9 +48,9 @@ fi
 
 cleanup() {
   pkill -f "$REPO_ROOT/build/index.js" >/dev/null 2>&1 || true
-  pkill -f "$REPO_ROOT/scripts/exec-with-env.mjs node $REPO_ROOT/build/index.js" >/dev/null 2>&1 || true
+  pkill -f "$REPO_ROOT/scripts/with-onepassword-graph-env.sh node $REPO_ROOT/build/index.js" >/dev/null 2>&1 || true
 }
 
 trap cleanup EXIT INT TERM
 
-node "$SCRIPT_DIR/exec-with-env.mjs" "${cmd[@]}"
+exec "$SCRIPT_DIR/with-onepassword-graph-env.sh" "${cmd[@]}"

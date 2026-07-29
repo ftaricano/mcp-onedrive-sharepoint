@@ -7,21 +7,27 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 test("operational wrappers use the canonical 1Password-only helper", () => {
-  const source = ["scripts/ods.sh", "scripts/run-stdio.sh", "scripts/onepassword-graph-env.sh"]
+  const source = ["scripts/ods.sh", "scripts/run-stdio.sh", "scripts/spcall.sh", "scripts/onepassword-graph-env.sh", "scripts/with-onepassword-graph-env.sh"]
     .map((relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8"))
     .join("\n");
 
-  assert.match(source, /from cpz_keychain import get/);
+  assert.match(source, /from cpz_keychain import get_item/);
   assert.doesNotMatch(source, /find-generic-password/);
   assert.doesNotMatch(source, /unlock-keychain/);
+  assert.doesNotMatch(source, /exec-with-env/);
 });
 
-test("dotenv loader discards persisted Graph client secrets", () => {
-  const source = fs.readFileSync(
-    path.join(root, "scripts/exec-with-env.mjs"),
-    "utf8",
-  );
+test("runtime source has no dotenv, Keychain, or file credential backend", () => {
+  const source = [
+    "src/auth/microsoft-graph-auth.ts",
+    "src/config/index.ts",
+    "src/auth/setup-auth.ts",
+  ]
+    .map((relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8"))
+    .join("\n");
 
-  assert.match(source, /delete fileEnv\.MICROSOFT_GRAPH_CLIENT_SECRET/);
-  assert.match(source, /delete fileEnv\.SP_CLIENT_SECRET/);
+  assert.doesNotMatch(source, /dotenv/);
+  assert.doesNotMatch(source, /keytar/);
+  assert.doesNotMatch(source, /FileFallbackStore/);
+  assert.doesNotMatch(source, /readFile|writeFile|mkdir/);
 });

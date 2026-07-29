@@ -17,19 +17,7 @@ export async function bootstrap(): Promise<void> {
     initializeAuth(config.auth);
 
     const auth = getAuthInstance();
-    if (config.auth.clientSecret) {
-      // App-identity (client credentials) mode: there is no interactive user
-      // cached in the keychain, so acquire the app token directly instead of
-      // demanding a device-code login that does not apply.
-      await auth.getAccessToken();
-    } else {
-      const cachedUser = await auth.getCurrentUser();
-      if (!cachedUser) {
-        throw new Error(
-          "Authentication required. Run `npm run setup-auth` before calling tools.",
-        );
-      }
-    }
+    await auth.getAccessToken();
 
     getGraphClient();
     initialized = true;
@@ -53,7 +41,7 @@ export function prewarmAuth(): void {
     if (typeof auth.prewarm === "function") auth.prewarm();
   } catch (err) {
     // Non-fatal: bootstrap() will raise the real failure on first tool call.
-    // Still log so missing config / broken keychain does not vanish.
+    // Still log so missing config / broken 1Password resolution does not vanish.
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[prewarmAuth] skipped: ${message}`);
   }
