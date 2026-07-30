@@ -96,7 +96,8 @@ export class GraphApiError extends Error {
         category: "Authentication",
         severity: "High",
         isRetryable: false,
-        suggestedAction: "Please re-authenticate using the setup-auth script",
+        suggestedAction:
+          "Ask a 1Password owner to verify the Microsoft Graph client-credential items",
       };
     }
 

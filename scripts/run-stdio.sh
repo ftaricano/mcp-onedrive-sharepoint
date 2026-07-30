@@ -1,7 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
 
-SCRIPT_PATH="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${BASH_SOURCE[0]}")"
+SCRIPT_PATH="$(/usr/bin/python3 -I -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -10,4 +10,4 @@ if [[ ! -f "$REPO_ROOT/build/index.js" ]]; then
   exit 1
 fi
 
-exec node "$SCRIPT_DIR/exec-with-env.mjs" node "$REPO_ROOT/build/index.js"
+exec "$SCRIPT_DIR/with-onepassword-graph-env.sh" node "$REPO_ROOT/build/index.js"

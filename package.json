@@ -13,24 +13,24 @@
     "!build/.tsbuildinfo",
     "!build/**/*.map",
     "!build/utils/test-enhancements.*",
-    "scripts/exec-with-env.mjs",
     "scripts/ods.sh",
+    "scripts/onepassword-graph-env.sh",
     "scripts/run-stdio.sh",
     "scripts/spcall.sh",
+    "scripts/with-onepassword-graph-env.sh",
     "config/sites.example.json",
-    ".env.example",
     "README.md",
     "LICENSE",
     "SECURITY.md"
   ],
   "scripts": {
     "build": "tsc --pretty false",
-    "dev": "tsx src/index.ts",
-    "cli": "tsx src/cli.ts",
-    "start": "node build/index.js",
+    "dev": "./scripts/with-onepassword-graph-env.sh npx tsx src/index.ts",
+    "cli": "./scripts/ods.sh",
+    "start": "./scripts/run-stdio.sh",
     "stdio": "./scripts/run-stdio.sh",
     "spcall": "./scripts/spcall.sh",
-    "setup-auth": "tsx src/auth/setup-auth.ts",
+    "setup-auth": "./scripts/with-onepassword-graph-env.sh npx tsx src/auth/setup-auth.ts",
     "test": "npm run build && MCP_LOCAL_FILE_ROOT=/ node --test build/tests/*.test.js",
     "lint": "eslint . --ext .ts --max-warnings 393",
     "ci": "npm run build && npm run lint && npm test",
@@ -58,9 +58,7 @@
     "@azure/msal-node": "^2.6.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "axios": "^1.6.7",
-    "dotenv": "^16.4.1",
     "form-data": "^4.0.0",
-    "keytar": "^7.9.0",
     "mime-types": "^2.1.35"
   },
   "devDependencies": {
@@ -75,8 +73,8 @@
     "typescript": "^5.3.3"
   },
   "bin": {
-    "mcp-onedrive-sharepoint": "./build/index.js",
-    "ods": "./build/cli.js",
+    "mcp-onedrive-sharepoint": "./scripts/run-stdio.sh",
+    "ods": "./scripts/ods.sh",
     "sharepoint-mcp-stdio": "./scripts/run-stdio.sh",
     "spcall": "./scripts/spcall.sh"
   }
