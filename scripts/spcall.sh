@@ -1,7 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
 
-SCRIPT_PATH="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${BASH_SOURCE[0]}")"
+SCRIPT_PATH="$(/usr/bin/python3 -I -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -48,9 +48,10 @@ fi
 
 cleanup() {
   pkill -f "$REPO_ROOT/build/index.js" >/dev/null 2>&1 || true
-  pkill -f "$REPO_ROOT/scripts/with-onepassword-graph-env.sh node $REPO_ROOT/build/index.js" >/dev/null 2>&1 || true
 }
 
 trap cleanup EXIT INT TERM
 
-exec "$SCRIPT_DIR/with-onepassword-graph-env.sh" "${cmd[@]}"
+# Sem `exec`: o shell precisa sobreviver pra rodar o trap de cleanup
+# (run-stdio.sh pode deixar o servidor MCP órfão depois que o mcporter sai).
+"$SCRIPT_DIR/with-onepassword-graph-env.sh" "${cmd[@]}"
