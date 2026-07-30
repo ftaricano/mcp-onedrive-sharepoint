@@ -11,10 +11,12 @@ test("operational wrappers use the canonical 1Password-only helper", () => {
     .map((relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8"))
     .join("\n");
 
-  // `get` (e não `get_item`): API presente na main do hub scripts, então o
-  // launcher funciona independentemente da ordem de merge do JAR-424.
-  assert.match(source, /from cpz_keychain import get\b/);
-  assert.doesNotMatch(source, /get_item/);
+  // `_op_get` (e não `get`/`get_item`): leitura 1P pura com contrato idêntico
+  // na main e na branch do hub scripts — sem cache plaintext em disco e sem
+  // stale-fallback (o `get()` da main tem os dois), e sem depender da ordem
+  // de merge do JAR-424.
+  assert.match(source, /from cpz_keychain import _op_get/);
+  assert.doesNotMatch(source, /import get\b|get_item/);
   // Interpretadores fixos e isolados no caminho que manipula o segredo.
   assert.match(source, /\/usr\/bin\/python3 -I /);
   assert.doesNotMatch(source, /^ *python3 -c/m);
