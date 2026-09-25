@@ -3,14 +3,14 @@ import assert from "node:assert/strict";
 
 import { sanitizeFileName, analyzePath } from "../tools/utils/path-helper.js";
 
-test("sanitizeFileName preserves spaces in folder names (regression #12)", () => {
-  assert.equal(sanitizeFileName("Marco Costa"), "Marco Costa");
+test("sanitizeFileName preserves spaces in folder names (no underscore rewrite)", () => {
+  assert.equal(sanitizeFileName("Jane Doe"), "Jane Doe");
 });
 
 test("sanitizeFileName preserves spaces in file names", () => {
   assert.equal(
-    sanitizeFileName("Recibo de Pagamento 042026.pdf"),
-    "Recibo de Pagamento 042026.pdf",
+    sanitizeFileName("Monthly Report 042026.pdf"),
+    "Monthly Report 042026.pdf",
   );
 });
 
