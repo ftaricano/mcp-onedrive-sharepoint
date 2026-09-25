@@ -1,11 +1,21 @@
 # MCP OneDrive/SharePoint Server
 
+[![CI](https://github.com/ftaricano/mcp-onedrive-sharepoint/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ftaricano/mcp-onedrive-sharepoint/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%E2%89%A518-brightgreen.svg)](https://nodejs.org)
 [![MCP](https://img.shields.io/badge/MCP-compatible-8A2BE2.svg)](https://modelcontextprotocol.io)
 [![TypeScript](https://img.shields.io/badge/typescript-%5E5.3-3178c6.svg)](https://www.typescriptlang.org)
 
-MCP server and CLI for Microsoft Graph focused on OneDrive, SharePoint and related document workflows. It authenticates with app-only client credentials read from environment variables, starts with a 10-tool core profile, and can opt into advanced tools for trusted automation.
+Give AI agents (over MCP) and shell scripts (through the `ods` CLI) access to OneDrive and SharePoint document libraries via Microsoft Graph, with app-only authentication and a small default tool set.
+
+![Terminal session: listing the tools and the files of a SharePoint folder with the CLI](docs/demo.svg)
+
+<sub>Real CLI output against a mocked Microsoft Graph with fictional data (the Acme site on `contoso.sharepoint.com`).</sub>
+
+- **One core, two front ends:** the MCP server and the CLI share the same tools, auth and handlers.
+- **Small default surface:** the `core` profile has 10 everyday tools; delete, share, permission, list-item and raw Graph tools are opt-in.
+- **Guarded requests:** request URLs are checked against `https://graph.microsoft.com` before the token is attached, and local file access is confined to one root directory.
+- **Script friendly:** tool results are JSON, so `jq` and friends just work.
 
 ## Quickstart
 
@@ -23,6 +33,37 @@ node build/cli.js list_files --siteUrl=https://contoso.sharepoint.com/sites/Docs
 ```
 
 Prefer injecting the secret from your secret manager over typing it into the shell. To use the MCP server, point your MCP client at `node /absolute/path/to/mcp-onedrive-sharepoint/build/index.js` with the same three variables in its environment (see [MCP stdio snippet](#mcp-stdio-snippet)).
+
+## Example
+
+List a folder of a SharePoint site and keep only the fields you need:
+
+```bash
+node build/cli.js list_files --siteUrl=https://contoso.sharepoint.com/sites/Acme --path=/Reports \
+  | jq -c '.items[] | {name, type, size}'
+```
+
+```json
+{"name":"2026-Q2","type":"folder","size":0}
+{"name":"Quarterly report Q1.pdf","type":"file","size":482133}
+{"name":"Sales pipeline.xlsx","type":"file","size":91520}
+```
+
+The same call from an MCP client is the `list_files` tool with `{"siteUrl": "https://contoso.sharepoint.com/sites/Acme", "path": "/Reports"}`. More inputs are in [Example tool inputs](#example-tool-inputs).
+
+## Architecture
+
+```text
+MCP client ──stdio──▶ build/index.js ─┐
+                                      ├─▶ tool registry ─▶ handlers ─▶ Graph client ─▶ graph.microsoft.com
+shell, scripts ─────▶ build/cli.js ───┘   (core | full)               │  URL guard, retries, paging
+                                                                      └─ MSAL client credentials (token in memory)
+```
+
+- `src/tools/registry.ts` picks the tools for the active profile; both entry points use it.
+- `src/graph/client.ts` is the only HTTP path to Graph. It rejects request URLs outside `https://graph.microsoft.com/{v1.0,beta}` before fetching or attaching the token.
+- `src/auth/` gets app-only tokens with MSAL and keeps them in memory; nothing is written to disk.
+- `src/sharepoint/site-resolver.ts` turns site aliases from a local, untracked registry into Graph ids.
 
 ## Tools
 
@@ -336,9 +377,11 @@ Issues and PRs welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Before opening a
 - one focused change per PR
 - no credentials, tenant-specific ids, or internal paths in commits or README
 
-## License
+## License and credits
 
-[MIT](LICENSE)
+[MIT](LICENSE).
+
+Built on the [Model Context Protocol TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk), [MSAL Node](https://github.com/AzureAD/microsoft-authentication-library-for-js/tree/dev/lib/msal-node) and [axios](https://github.com/axios/axios). Microsoft, OneDrive and SharePoint are trademarks of Microsoft Corporation; this project is not affiliated with or endorsed by Microsoft.
 
 ## Current limitations
 
