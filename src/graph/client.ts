@@ -6,6 +6,7 @@ import axios, { AxiosInstance, AxiosResponse, AxiosError } from "axios";
 import { basename } from "node:path";
 import { getAuthInstance } from "../auth/microsoft-graph-auth.js";
 import { GraphApiError, RetryHelper } from "./error-handler.js";
+import { assertGraphRequestUrl } from "./url-guard.js";
 import { GRAPH_BASE_URL, buildUrl } from "../config/endpoints.js";
 import { GraphResponse, WorkbookSession, McpResponse } from "./models.js";
 import { assertGraphPayloadHasNoError } from "./contracts.js";
@@ -77,6 +78,10 @@ export class GraphClient {
     // Request interceptor for authentication and rate limiting
     this.axios.interceptors.request.use(
       async (config) => {
+        // Validate the effective destination (what the adapter will call)
+        // before any token is fetched: an absolute URL overrides baseURL.
+        assertGraphRequestUrl(this.axios.getUri(config));
+
         // Add authentication header
         const { getAuthInstance } = await import(
           "../auth/microsoft-graph-auth.js"
