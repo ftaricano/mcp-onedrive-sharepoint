@@ -162,7 +162,7 @@ MCP_ENABLE_EXPERIMENTAL_GRAPH_BATCH=false
 
 Notes:
 
-- the credentials are read only from the process environment; `.env` is never loaded
+- the credentials come from the process environment alone; `.env` is never loaded
 - `npm start`, `npm run stdio`, `npm run cli`, `npm run spcall` and the packaged bins go through the legacy launchers in `scripts/` (see [Operational wrappers](#operational-wrappers)); `node build/index.js` and `node build/cli.js` read the environment directly
 - set `MCP_LOCAL_FILE_ROOT` to constrain local upload/download/sync file access; if unset, local paths are constrained to the process working directory
 
