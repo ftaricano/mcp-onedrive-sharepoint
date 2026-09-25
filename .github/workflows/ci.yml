@@ -8,6 +8,10 @@ on:
       - feat/**
       - fix/**
       - chore/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   verify:
@@ -29,3 +33,22 @@ jobs:
 
       - name: Run verification pipeline
         run: npm run ci
+
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Free for repositories owned by a personal account. An organization-owned
+      # repository needs a GITLEAKS_LICENSE secret (see gitleaks-action docs).
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: false

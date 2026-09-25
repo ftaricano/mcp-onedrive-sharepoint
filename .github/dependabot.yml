@@ -1,0 +1,26 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      dev-dependencies:
+        dependency-type: development
+    ignore:
+      # TypeScript majors wait until the @typescript-eslint peer range accepts them;
+      # a grouped TypeScript major otherwise fails `npm ci` with ERESOLVE.
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: ci
