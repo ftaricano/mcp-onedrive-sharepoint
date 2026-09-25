@@ -5,23 +5,45 @@
 [![MCP](https://img.shields.io/badge/MCP-compatible-8A2BE2.svg)](https://modelcontextprotocol.io)
 [![TypeScript](https://img.shields.io/badge/typescript-%5E5.3-3178c6.svg)](https://www.typescriptlang.org)
 
-MCP server and CLI for Microsoft Graph focused on OneDrive, SharePoint and related document workflows. It uses 1Password-provisioned client credentials only, starts with a safe 10-tool core profile, and can opt into advanced tools for trusted automation.
+MCP server and CLI for Microsoft Graph focused on OneDrive, SharePoint and related document workflows. It authenticates with app-only client credentials read from environment variables, starts with a 10-tool core profile, and can opt into advanced tools for trusted automation.
 
-Onboarding commands on a clean clone:
+## Quickstart
 
-- `npm run build`
-- `npm run lint`
-- `npm test`
-- `npm run ci`
+You need Node.js 18+ and a Microsoft Entra ID app registration with the `Files.ReadWrite.All` and `Sites.ReadWrite.All` Application permissions and admin consent (see [Requirements](#requirements)).
+
+```bash
+git clone https://github.com/ftaricano/mcp-onedrive-sharepoint.git
+cd mcp-onedrive-sharepoint
+npm ci && npm run build
+export MICROSOFT_GRAPH_TENANT_ID=<tenant-uuid>
+export MICROSOFT_GRAPH_CLIENT_ID=<application-client-id>
+export MICROSOFT_GRAPH_CLIENT_SECRET=<client-secret>
+node build/cli.js list
+node build/cli.js list_files --siteUrl=https://contoso.sharepoint.com/sites/Docs --path=/
+```
+
+Prefer injecting the secret from your secret manager over typing it into the shell. To use the MCP server, point your MCP client at `node /absolute/path/to/mcp-onedrive-sharepoint/build/index.js` with the same three variables in its environment (see [MCP stdio snippet](#mcp-stdio-snippet)).
+
+## Tools
+
+The default profile, `MCP_TOOL_PROFILE=core`, exposes these tools to both the MCP server and the `ods` CLI:
+
+| Tool | What it does | Writes |
+|---|---|---|
+| `health_check` | Check authentication and Graph connectivity | no |
+| `list_drives` | List accessible drives (OneDrive and SharePoint document libraries) | no |
+| `discover_sites` | Search SharePoint sites visible to the app | no |
+| `resolve_site` | Resolve a site from an alias, `siteId` or site URL | no |
+| `list_files` | List files and folders in a drive path, with pagination | no |
+| `search_files` | Search files and folders in a drive, with pagination | no |
+| `get_file_metadata` | Get metadata (and optionally versions) for a file or folder | no |
+| `download_file` | Download a file; with `outputPath` it writes (and overwrites) a local file | local disk |
+| `upload_file` | Upload a local file to a drive path (`conflictBehavior`: `fail`, `replace`, `rename`) | yes |
+| `create_folder` | Create a folder in a drive | yes |
 
 ## Tool profiles
 
-The server defaults to `MCP_TOOL_PROFILE=core`, a smaller public surface intended for day-to-day document workflows:
-
-- `health_check`, `list_drives`
-- `discover_sites`, `resolve_site`
-- `list_files`, `search_files`, `get_file_metadata`
-- `download_file`, `upload_file`, `create_folder`
+The server defaults to `MCP_TOOL_PROFILE=core`, a smaller public surface intended for day-to-day document workflows (the table above).
 
 Set `MCP_TOOL_PROFILE=full` to expose advanced and destructive tools for trusted environments:
 
@@ -38,14 +60,14 @@ You can also remove individual tools with `MCP_DISABLED_TOOLS=delete_item,manage
 
 - one MCP server for both OneDrive and SharePoint document libraries
 - matching `ods` CLI for shell scripting and one-shot automation
-- 1Password-only client credentials for interactive and unattended use
+- app-only client credentials from the process environment; no `.env` loading and no token cache on disk
 - site aliases loaded from a local registry so tenant IDs stay out of git
 - pagination/resource helpers for `driveId`, `siteId`, `itemId` and path targeting
 
 ## Requirements
 
 - Node.js 18+
-- A Microsoft Entra ID / Azure AD confidential app registration with Application permissions (`Files.ReadWrite.All`, `Sites.ReadWrite.All`) and admin consent. The 1Password owner must provision `cpz::SP_CLIENT_ID`, `cpz::SP_CLIENT_SECRET`, and `cpz::SP_TENANT_ID`; the tenant must be a specific UUID, not `common`.
+- A Microsoft Entra ID / Azure AD confidential app registration with Application permissions (`Files.ReadWrite.All`, `Sites.ReadWrite.All`) and admin consent. The app's tenant ID, client ID and client secret are passed as `MICROSOFT_GRAPH_TENANT_ID`, `MICROSOFT_GRAPH_CLIENT_ID` and `MICROSOFT_GRAPH_CLIENT_SECRET`; the tenant must be a specific UUID, not `common`.
 
 ## Installation
 
@@ -57,16 +79,16 @@ npm install
 
 ## Operational wrappers
 
-Important operational rule:
+Operational guidance:
 
 - use this MCP on demand
-- do not keep it permanently bound/loaded in Hermes or Claude Code when not needed
+- do not keep it permanently loaded in your MCP client when not needed
 - prefer one-shot `spcall` / `mcporter --stdio` execution so the process exits right after the call and does not accumulate zombie or idle MCP processes
 - the `spcall` wrapper includes post-call cleanup for stray repo-local MCP child processes
 
-This repo includes lightweight wrappers for local operational use:
+The `scripts/` directory has legacy launchers for one specific local setup: they read the three `MICROSOFT_GRAPH_*` values from a password manager through a helper that is **not** part of this repository, and inject them only into the child process. Outside that setup they fail, so run `node build/index.js` or `node build/cli.js` with the variables already in the environment instead. The launchers will be removed in a future major version.
 
-- `./scripts/run-stdio.sh`: start the MCP stdio server after resolving required values from 1Password
+- `./scripts/run-stdio.sh`: start the MCP stdio server after injecting the credentials
 - `./scripts/spcall.sh`: run ad-hoc `mcporter` calls against the local MCP server
 - `npm run stdio`: same as `./scripts/run-stdio.sh`
 - `npm run spcall -- <tool> ...`: same as `./scripts/spcall.sh <tool> ...`
@@ -98,7 +120,8 @@ ods <tool> --json '{"k":"v"}'             # pass the full payload as JSON
 ```
 
 During development, rebuild before `npm run cli -- <tool> ...`; the command uses
-the same packaged 1Password launcher as the installed `ods` bin.
+the same launcher as the packaged `ods` bin. `node build/cli.js <tool> ...` runs the
+CLI directly with the credentials from the environment.
 
 ### Examples
 
@@ -122,7 +145,7 @@ ods upload_file --json '{"driveId":"b!abc","path":"/x.txt","content":"hello"}'
 The server reads the following environment variables:
 
 ```bash
-# These values are injected only by scripts/with-onepassword-graph-env.sh:
+# Required, from your secret manager (never from a committed file):
 # MICROSOFT_GRAPH_CLIENT_ID
 # MICROSOFT_GRAPH_TENANT_ID (specific UUID)
 # MICROSOFT_GRAPH_CLIENT_SECRET
@@ -139,19 +162,20 @@ MCP_ENABLE_EXPERIMENTAL_GRAPH_BATCH=false
 
 Notes:
 
-- Graph credentials are resolved from 1Password for every supported npm command and packaged bin
-- process-local credential variables are reserved for the launcher and tests; `.env` is never loaded
+- the credentials are read only from the process environment; `.env` is never loaded
+- `npm start`, `npm run stdio`, `npm run cli`, `npm run spcall` and the packaged bins go through the legacy launchers in `scripts/` (see [Operational wrappers](#operational-wrappers)); `node build/index.js` and `node build/cli.js` read the environment directly
 - set `MCP_LOCAL_FILE_ROOT` to constrain local upload/download/sync file access; if unset, local paths are constrained to the process working directory
 
 ## Authentication modes
 
-### 1Password client credentials
+### Client credentials (app-only)
 
-Every supported launcher resolves `cpz::SP_CLIENT_ID`, `cpz::SP_CLIENT_SECRET`, and
-`cpz::SP_TENANT_ID` through the canonical 1Password helper and injects the values only
-into its child process. There is no `.env`, Keychain, file cache, or delegated token
-fallback. `npm run setup-auth` and `ods auth` fail intentionally because the service
-account cannot persist delegated tokens; request owner-mediated provisioning instead.
+The server authenticates as the app registration with the client-credentials flow, using
+`MICROSOFT_GRAPH_TENANT_ID`, `MICROSOFT_GRAPH_CLIENT_ID` and
+`MICROSOFT_GRAPH_CLIENT_SECRET` from the environment. There is no `.env`, Keychain, file
+cache, or delegated token fallback. `npm run setup-auth` and `ods auth` fail
+intentionally because delegated token persistence is disabled; provision the app
+credentials instead.
 
 ## Development commands
 
@@ -227,13 +251,19 @@ Each site entry looks like:
 
 ### MCP stdio snippet
 
-Use the wrapper as the MCP command so Graph credentials are resolved from 1Password:
+Run the built server with Node and pass the credentials in the environment (from your secret manager or your MCP client's secret store):
 
 ```json
 {
   "mcpServers": {
     "sharepoint": {
-      "command": "/absolute/path/to/mcp-onedrive-sharepoint/scripts/run-stdio.sh"
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-onedrive-sharepoint/build/index.js"],
+      "env": {
+        "MICROSOFT_GRAPH_TENANT_ID": "<tenant-uuid>",
+        "MICROSOFT_GRAPH_CLIENT_ID": "<application-client-id>",
+        "MICROSOFT_GRAPH_CLIENT_SECRET": "<client-secret>"
+      }
     }
   }
 }
@@ -275,7 +305,7 @@ Use the wrapper as the MCP command so Graph credentials are resolved from 1Passw
 ```json
 {
   "siteId": "contoso.sharepoint.com,123,456",
-  "listId": "9c6b8b70-0000-0000-0000-111111111111",
+  "listId": "00000000-0000-0000-0000-000000000000",
   "orderBy": "Created desc",
   "limit": 100
 }
@@ -283,11 +313,11 @@ Use the wrapper as the MCP command so Graph credentials are resolved from 1Passw
 
 ## Troubleshooting
 
-- `403 Forbidden` on SharePoint lists/drives: the app registration lacks permission to the target site. Check application permissions and admin consent with the owner.
+- `403 Forbidden` on SharePoint lists/drives: the app registration lacks permission to the target site. Check the application permissions and admin consent.
 - `404` on a `driveId` or `siteId`: the identifier is stale or the resource was deleted. Use `list_drives` / `discover_sites` to re-discover.
 - Build fails on a clean clone: make sure Node.js is 18+ and run `npm install` before `npm run build`.
-- `AADSTS700016` or `401`: ensure the 1Password owner has provisioned a specific tenant UUID (not `common`) and Application permissions have admin consent in Azure AD.
-- `AADSTS7000215` (invalid client secret): rotate the secret in the app registration and have the 1Password owner update `cpz::SP_CLIENT_SECRET`.
+- `AADSTS700016` or `401`: make sure `MICROSOFT_GRAPH_TENANT_ID` is a specific tenant UUID (not `common`) and the Application permissions have admin consent in Microsoft Entra ID.
+- `AADSTS7000215` (invalid client secret): create a new secret in the app registration and update `MICROSOFT_GRAPH_CLIENT_SECRET` wherever you store it.
 
 ## Security
 
@@ -296,11 +326,11 @@ This server handles Microsoft Graph client credentials and access to corporate f
 - `.env`, `tokens.json`, `credentials.json`, and secret-store exports are **never** committed — see [.gitignore](.gitignore).
 - tenant-specific `siteId`, `driveId`, SharePoint URLs and internal operational paths should stay in local/private docs, not in this public repo.
 - Report security issues privately via [GitHub security advisories](https://github.com/ftaricano/mcp-onedrive-sharepoint/security/advisories/new) — do not open a public issue.
-- If a client secret leaks, revoke it in Azure AD and ask the 1Password owner to rotate `cpz::SP_CLIENT_SECRET`.
+- If a client secret leaks, revoke it in Microsoft Entra ID, create a new one and update your secret store.
 
 ## Contributing
 
-Issues and PRs welcome. Before opening a PR:
+Issues and PRs welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Before opening a PR:
 
 - `npm run ci` passes (build + lint + tests)
 - one focused change per PR
@@ -308,10 +338,10 @@ Issues and PRs welcome. Before opening a PR:
 
 ## License
 
-[MIT](LICENSE) © Fernando Taricano
+[MIT](LICENSE)
 
 ## Current limitations
 
-- client credentials require Application permissions, admin consent, and owner-mediated provisioning in 1Password
+- client credentials require Application permissions and admin consent; delegated (per-user) sign-in is not supported
 - advanced/destructive tools require `MCP_TOOL_PROFILE=full`
 - raw Graph batch calls require `MCP_ENABLE_EXPERIMENTAL_GRAPH_BATCH=true`
