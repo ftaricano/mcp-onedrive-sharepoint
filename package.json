@@ -1,6 +1,6 @@
 {
   "name": "mcp-onedrive-sharepoint",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MCP server and CLI for OneDrive and SharePoint via Microsoft Graph",
   "main": "build/index.js",
   "type": "module",
