@@ -69,14 +69,14 @@ export async function handleHealthCheck(args: any) {
       timestamp: new Date().toISOString(),
       authentication: {
         isAuthenticated,
-        authMethod: "Microsoft Graph Client Credentials via 1Password",
+        authMethod: "Microsoft Graph Client Credentials",
       },
     };
 
     if (!isAuthenticated) {
       healthStatus.status = "authentication_required";
       healthStatus.message =
-        "Ask a 1Password owner to provision or verify the Microsoft Graph client-credential items";
+        "Set MICROSOFT_GRAPH_TENANT_ID, MICROSOFT_GRAPH_CLIENT_ID and MICROSOFT_GRAPH_CLIENT_SECRET for an app registration with client credentials (see README > Configuration).";
 
       return jsonTextResponse(healthStatus);
     }

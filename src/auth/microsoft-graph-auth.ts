@@ -1,8 +1,8 @@
 /**
  * Microsoft Graph client-credential authentication.
  *
- * Credentials arrive only from the 1Password launcher as process-local
- * environment variables. This module keeps access tokens in memory only.
+ * Credentials arrive only as process-local environment variables
+ * (MICROSOFT_GRAPH_*). This module keeps access tokens in memory only.
  */
 
 import {
@@ -45,14 +45,14 @@ export class MicrosoftGraphAuth {
 
   async authenticate(): Promise<TokenInfo> {
     throw new Error(
-      "Delegated device-code authentication is disabled because this tool cannot persist tokens outside 1Password. Ask a 1Password owner to provision client-credential items.",
+      "Delegated device-code authentication is disabled because this tool does not persist tokens. Set MICROSOFT_GRAPH_TENANT_ID, MICROSOFT_GRAPH_CLIENT_ID and MICROSOFT_GRAPH_CLIENT_SECRET for an app registration with client credentials (see README > Configuration).",
     );
   }
 
   async getAccessToken(): Promise<string> {
     if (!this.config.clientSecret) {
       throw new Error(
-        "Missing Microsoft Graph client secret from the 1Password launcher. Ask a 1Password owner to provision cpz::SP_CLIENT_SECRET.",
+        "Missing Microsoft Graph client secret. Set MICROSOFT_GRAPH_CLIENT_SECRET (see README > Configuration).",
       );
     }
 
