@@ -10,6 +10,9 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 - Documentation: Quickstart with plain environment variables, a tools table,
   English `AGENTS.md`, `CONTRIBUTING.md`, and issue and pull request templates.
+- Credential error messages, the `ods auth` / `setup-auth` notices and the
+  `health_check` `authMethod` field no longer refer to a specific secret manager;
+  they name the `MICROSOFT_GRAPH_*` environment variables instead.
 
 ## [1.0.1] - 2026-09-25
 

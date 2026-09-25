@@ -41,7 +41,7 @@ export function prewarmAuth(): void {
     if (typeof auth.prewarm === "function") auth.prewarm();
   } catch (err) {
     // Non-fatal: bootstrap() will raise the real failure on first tool call.
-    // Still log so missing config / broken 1Password resolution does not vanish.
+    // Still log so missing config / broken credential injection does not vanish.
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[prewarmAuth] skipped: ${message}`);
   }
