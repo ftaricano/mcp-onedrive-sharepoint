@@ -48,7 +48,7 @@ jobs:
       # Free for repositories owned by a personal account. An organization-owned
       # repository needs a GITLEAKS_LICENSE secret (see gitleaks-action docs).
       - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: false
