@@ -97,7 +97,7 @@ export class GraphApiError extends Error {
         severity: "High",
         isRetryable: false,
         suggestedAction:
-          "Ask a 1Password owner to verify the Microsoft Graph client-credential items",
+          "Verify MICROSOFT_GRAPH_TENANT_ID, MICROSOFT_GRAPH_CLIENT_ID and MICROSOFT_GRAPH_CLIENT_SECRET and the app registration's admin consent",
       };
     }
 

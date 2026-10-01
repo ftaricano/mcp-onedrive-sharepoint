@@ -44,7 +44,7 @@
     "llm-tools",
     "cli"
   ],
-  "author": "Fernando Taricano",
+  "author": "ftaricano",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ftaricano/mcp-onedrive-sharepoint.git"

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 export async function setupAuthentication(): Promise<void> {
   throw new Error(
-    "setup-auth is disabled: delegated tokens cannot be persisted outside 1Password. Ask a 1Password owner to provision cpz::SP_CLIENT_ID, cpz::SP_CLIENT_SECRET, and cpz::SP_TENANT_ID.",
+    "setup-auth is disabled: this tool does not persist delegated tokens. Set MICROSOFT_GRAPH_TENANT_ID, MICROSOFT_GRAPH_CLIENT_ID and MICROSOFT_GRAPH_CLIENT_SECRET for an app registration with client credentials (see README > Configuration).",
   );
 }
 

@@ -1,0 +1,44 @@
+name: Bug report
+description: Something does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please remove tokens, tenant, site and drive ids, e-mail
+        addresses and any private data from logs before pasting them. Security problems go
+        through SECURITY.md instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what you got.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Set MCP_TOOL_PROFILE=core
+        2. Run `ods list_files --siteUrl=https://contoso.sharepoint.com/sites/Docs --path=/`
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: 1.0.1
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: macOS 15 / Node 22 / MCP client name and version, or CLI
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (redacted)
+      render: text

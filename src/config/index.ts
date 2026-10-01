@@ -57,7 +57,7 @@ export function loadConfig(): ServerConfig {
 export function validateConfig(config: ServerConfig): void {
   if (!config.auth.clientId) {
     throw new Error(
-      "Missing MICROSOFT_GRAPH_CLIENT_ID. Start through an npm command or packaged bin so the 1Password launcher can inject it.",
+      "Missing MICROSOFT_GRAPH_CLIENT_ID. Set MICROSOFT_GRAPH_TENANT_ID, MICROSOFT_GRAPH_CLIENT_ID and MICROSOFT_GRAPH_CLIENT_SECRET for an app registration with client credentials (see README > Configuration).",
     );
   }
 

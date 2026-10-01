@@ -22,7 +22,7 @@ function printUsage(): void {
       "  ods <tool-name> --key=value [--key value] [--json '<payload>']",
       "  ods list              List all available tools",
       "  ods schema <tool>     Print JSON schema for a tool",
-      "  ods auth              (disabled — client credentials come from 1Password)",
+      "  ods auth              (disabled — client credentials come from the environment)",
       "  ods help              Print this message",
       "",
     ].join("\n"),

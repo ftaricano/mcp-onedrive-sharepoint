@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1221" height="406" viewBox="0 0 1221 406" role="img" aria-label="Terminal session: ods list and ods list_files against a mocked Microsoft Graph with fictional data">
+  <rect width="1221" height="406" rx="8" fill="#0d1117"/>
+  <circle cx="20" cy="18" r="6" fill="#ff5f56"/><circle cx="40" cy="18" r="6" fill="#ffbd2e"/><circle cx="60" cy="18" r="6" fill="#27c93f"/>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">
+  <text x="20" y="48" xml:space="preserve"><tspan fill="#7ee787">$</tspan><tspan fill="#e6edf3"> alias ods=&quot;node build/cli.js&quot;</tspan></text>
+  <text x="20" y="68" xml:space="preserve"><tspan fill="#7ee787">$</tspan><tspan fill="#e6edf3"> ods list</tspan></text>
+  <text x="20" y="88" xml:space="preserve"><tspan fill="#ffa657">list_files</tspan><tspan fill="#8b949e">         List files and folders in OneDrive or SharePoint drive</tspan></text>
+  <text x="20" y="108" xml:space="preserve"><tspan fill="#ffa657">download_file</tspan><tspan fill="#8b949e">      Download a file from OneDrive or SharePoint</tspan></text>
+  <text x="20" y="128" xml:space="preserve"><tspan fill="#ffa657">upload_file</tspan><tspan fill="#8b949e">        Upload a file to OneDrive or SharePoint</tspan></text>
+  <text x="20" y="148" xml:space="preserve"><tspan fill="#ffa657">create_folder</tspan><tspan fill="#8b949e">      Create a new folder in OneDrive or SharePoint</tspan></text>
+  <text x="20" y="168" xml:space="preserve"><tspan fill="#ffa657">search_files</tspan><tspan fill="#8b949e">       Search for files and folders in OneDrive or SharePoint</tspan></text>
+  <text x="20" y="188" xml:space="preserve"><tspan fill="#ffa657">get_file_metadata</tspan><tspan fill="#8b949e">  Get detailed metadata for a file or folder</tspan></text>
+  <text x="20" y="208" xml:space="preserve"><tspan fill="#ffa657">discover_sites</tspan><tspan fill="#8b949e">     Discover SharePoint sites accessible by the user</tspan></text>
+  <text x="20" y="228" xml:space="preserve"><tspan fill="#ffa657">resolve_site</tspan><tspan fill="#8b949e">       Resolve a SharePoint site from canonical aliases, siteId, or canonical URL without relying on discover_sites</tspan></text>
+  <text x="20" y="248" xml:space="preserve"><tspan fill="#ffa657">health_check</tspan><tspan fill="#8b949e">       Check the health status and authentication of the MCP server</tspan></text>
+  <text x="20" y="268" xml:space="preserve"><tspan fill="#ffa657">list_drives</tspan><tspan fill="#8b949e">        List all accessible drives (OneDrive + SharePoint document libraries)</tspan></text>
+  <text x="20" y="288" xml:space="preserve"><tspan fill="#7ee787">$</tspan><tspan fill="#e6edf3"> ods list_files --siteUrl=https://contoso.sharepoint.com/sites/Acme --path=/Reports \</tspan></text>
+  <text x="20" y="308" xml:space="preserve"><tspan fill="#e6edf3">    | jq -c &#x27;.items[] | {name, type, size}&#x27;</tspan></text>
+  <text x="20" y="328" xml:space="preserve"><tspan fill="#a5d6ff">{<tspan fill="#79c0ff">&quot;name&quot;</tspan>:&quot;2026-Q2&quot;,<tspan fill="#79c0ff">&quot;type&quot;</tspan>:&quot;folder&quot;,<tspan fill="#79c0ff">&quot;size&quot;</tspan>:0}</tspan></text>
+  <text x="20" y="348" xml:space="preserve"><tspan fill="#a5d6ff">{<tspan fill="#79c0ff">&quot;name&quot;</tspan>:&quot;Quarterly report Q1.pdf&quot;,<tspan fill="#79c0ff">&quot;type&quot;</tspan>:&quot;file&quot;,<tspan fill="#79c0ff">&quot;size&quot;</tspan>:482133}</tspan></text>
+  <text x="20" y="368" xml:space="preserve"><tspan fill="#a5d6ff">{<tspan fill="#79c0ff">&quot;name&quot;</tspan>:&quot;Sales pipeline.xlsx&quot;,<tspan fill="#79c0ff">&quot;type&quot;</tspan>:&quot;file&quot;,<tspan fill="#79c0ff">&quot;size&quot;</tspan>:91520}</tspan></text>
+  </g>
+</svg>
