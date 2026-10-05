@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/ftaricano/mcp-onedrive-sharepoint/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ftaricano/mcp-onedrive-sharepoint/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/node-%E2%89%A518-brightgreen.svg)](https://nodejs.org)
+[![Node.js](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](https://nodejs.org)
 [![MCP](https://img.shields.io/badge/MCP-compatible-8A2BE2.svg)](https://modelcontextprotocol.io)
 [![TypeScript](https://img.shields.io/badge/typescript-%5E5.3-3178c6.svg)](https://www.typescriptlang.org)
 
@@ -19,7 +19,7 @@ Give AI agents (over MCP) and shell scripts (through the `ods` CLI) access to On
 
 ## Quickstart
 
-You need Node.js 18+ and a Microsoft Entra ID app registration with the `Files.ReadWrite.All` and `Sites.ReadWrite.All` Application permissions and admin consent (see [Requirements](#requirements)).
+You need Node.js 20+ and a Microsoft Entra ID app registration with the `Files.ReadWrite.All` and `Sites.ReadWrite.All` Application permissions and admin consent (see [Requirements](#requirements)).
 
 ```bash
 git clone https://github.com/ftaricano/mcp-onedrive-sharepoint.git
@@ -107,7 +107,7 @@ You can also remove individual tools with `MCP_DISABLED_TOOLS=delete_item,manage
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 20+
 - A Microsoft Entra ID / Azure AD confidential app registration with Application permissions (`Files.ReadWrite.All`, `Sites.ReadWrite.All`) and admin consent. The app's tenant ID, client ID and client secret are passed as `MICROSOFT_GRAPH_TENANT_ID`, `MICROSOFT_GRAPH_CLIENT_ID` and `MICROSOFT_GRAPH_CLIENT_SECRET`; the tenant must be a specific UUID, not `common`.
 
 ## Installation
@@ -356,7 +356,7 @@ Run the built server with Node and pass the credentials in the environment (from
 
 - `403 Forbidden` on SharePoint lists/drives: the app registration lacks permission to the target site. Check the application permissions and admin consent.
 - `404` on a `driveId` or `siteId`: the identifier is stale or the resource was deleted. Use `list_drives` / `discover_sites` to re-discover.
-- Build fails on a clean clone: make sure Node.js is 18+ and run `npm install` before `npm run build`.
+- Build fails on a clean clone: make sure Node.js is 20+ and run `npm install` before `npm run build`.
 - `AADSTS700016` or `401`: make sure `MICROSOFT_GRAPH_TENANT_ID` is a specific tenant UUID (not `common`) and the Application permissions have admin consent in Microsoft Entra ID.
 - `AADSTS7000215` (invalid client secret): create a new secret in the app registration and update `MICROSOFT_GRAPH_CLIENT_SECRET` wherever you store it.
 
