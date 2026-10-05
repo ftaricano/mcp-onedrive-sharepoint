@@ -8,6 +8,7 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Upgrade MSAL Node to 7.0.0 and require Node.js 20 or newer.
 - Documentation: Quickstart with plain environment variables, a tools table,
   English `AGENTS.md`, `CONTRIBUTING.md`, and issue and pull request templates.
 - Credential error messages, the `ods auth` / `setup-auth` notices and the
