@@ -55,7 +55,7 @@
   "homepage": "https://github.com/ftaricano/mcp-onedrive-sharepoint#readme",
   "license": "MIT",
   "dependencies": {
-    "@azure/msal-node": "^7.0.0",
+    "@azure/msal-node": "^7.0.1",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "axios": "^1.20.0",
     "form-data": "^4.0.0",
