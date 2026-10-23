@@ -753,3 +753,100 @@ test("plain authentication lines never resume after a quoted component", () => {
     }
   }
 });
+
+const standaloneValueForms: Array<[string, string]> = [
+  ["bare", canary],
+  ["double-quoted", JSON.stringify(canary)],
+  ["single-quoted", `'${canary}'`],
+  ["parameters", `username="${canary}", nonce='${canary}', response=${canary}`],
+];
+for (const originalScheme of authenticationSchemes) {
+  for (const scheme of [originalScheme, originalScheme.toLowerCase()]) {
+    for (const prefix of [
+      "",
+      ...authenticationHeaders.map((header) => `${header}: `),
+    ]) {
+      for (const [form, credential] of standaloneValueForms) {
+        for (const [representation, layers, raw] of representations) {
+          test(`standalone scheme ${scheme} / ${prefix || "none"} / ${form} / ${representation}`, (t) => {
+            const line = `${prefix}${scheme} ${credential}`;
+            const diagnostic = `diagnostic ${encodeDiagnostic(line, layers, raw)}`;
+            const envelope = jsonTextResponse({
+              diagnostic,
+              eTag: '"v1"',
+              cTag: '"c1"',
+              code: "NotFound",
+              url: base,
+            });
+            const consoleLog = t.mock.method(console, "log", () => {});
+            AuditLogger.log("upload", "fictional-user", diagnostic, "failure", {
+              diagnostic,
+            });
+            for (const output of [
+              redactOutput(line),
+              redactOutput(diagnostic),
+              envelope.content[0].text,
+              redactOutput(envelope.content[0].text),
+              JSON.stringify(
+                toolErrorResponse("upload_file", new Error(diagnostic)),
+              ),
+              createUserFriendlyError(new Error(diagnostic)),
+              SecurityValidator.sanitizeForLogging(diagnostic),
+              SecurityValidator.sanitizeForLogging({ diagnostic }),
+              JSON.stringify(AuditLogger.getRecentLogs(1)),
+              JSON.stringify(consoleLog.mock.calls),
+            ]) {
+              assert.ok(!output.includes(canary));
+              assert.ok(output.includes(`${scheme} ***`));
+            }
+            const fields = JSON.parse(envelope.content[0].text);
+            assert.equal(fields.eTag, '"v1"');
+            assert.equal(fields.cTag, '"c1"');
+            assert.equal(fields.code, "NotFound");
+            assert.equal(fields.url, base);
+            assert.equal(redactOutput(line), `${prefix}${scheme} ***`);
+          });
+        }
+      }
+    }
+  }
+  for (const [form, credential] of standaloneValueForms.slice(0, 3)) {
+    test(`CLI standalone ${originalScheme} / ${form} without bootstrap`, () => {
+      const child = spawnSync(
+        process.execPath,
+        [
+          fileURLToPath(new URL("../cli.js", import.meta.url)),
+          `${originalScheme} ${credential}`,
+        ],
+        { encoding: "utf8", env: { MCP_TOOL_PROFILE: "core" } },
+      );
+      assert.equal(child.status, 1);
+      assert.equal(child.stdout, "");
+      assert.ok(!child.stderr.includes(canary));
+      assert.ok(child.stderr.includes(`${originalScheme} ***`));
+    });
+  }
+}
+
+test("standalone authentication preserves outer JSON metadata and public diagnostics", () => {
+  const input = {
+    message: `Bearer "${canary}"`,
+    code: "InvalidAuthenticationToken",
+    eTag: '"v1"',
+    cTag: '"c1"',
+    url: base,
+  };
+  for (const layers of [0, 1, 2]) {
+    const encoded = encodeDiagnostic(JSON.stringify(input), layers, false);
+    const output = redactOutput(`diagnostic ${encoded}`);
+    assert.ok(!output.includes(canary));
+    assert.ok(output.includes("InvalidAuthenticationToken"));
+    assert.ok(output.includes(base));
+    assert.ok(output.includes("Bearer ***"));
+  }
+  assert.equal(redactOutput("code: NotFound"), "code: NotFound");
+  assert.equal(
+    redactOutput("Authentication Error: expired"),
+    "Authentication Error: expired",
+  );
+});

@@ -155,6 +155,44 @@ function readValue(text: string, start: number): string {
   return tail.slice(0, offset).trimEnd();
 }
 
+/** Locate an authentication production, independent of the scheme name. */
+function standaloneAuthenticationEnd(
+  text: string,
+  start: number,
+  depth: number,
+): number | null {
+  const whitespace = /^[ \t]+/.exec(text.slice(start));
+  if (!whitespace) return null;
+  const valueStart = start + whitespace[0].length;
+  const tail = text.slice(valueStart);
+  if (tail[0] === '"' || tail[0] === "'") {
+    const raw = readValue(text, valueStart);
+    let decoded: string;
+    try {
+      decoded = decodeQuoted(raw);
+    } catch {
+      return valueStart + /^[^\r\n]*/.exec(tail)![0].length;
+    }
+    // A serialized diagnostic is an envelope, not an opaque credential.
+    // Recurse into it before interpreting its leading label as an auth scheme.
+    if (
+      /^[\[{]/.test(decoded.trim()) ||
+      redactString(decoded, depth + 1) !== decoded
+    )
+      return null;
+    return valueStart + /^[^\r\n]*/.exec(tail)![0].length;
+  }
+  // RFC token68 credentials or a parameter list. Do not split parameters by name.
+  const parameters = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+[ \t]*=/.test(tail);
+  if (parameters) return valueStart + /^[^\r\n]*/.exec(tail)![0].length;
+  const opaque = /^[A-Za-z0-9._~+\/-]+={0,}(?=[ \t]*(?:$|[\r\n,;}\]]))/.exec(
+    tail,
+  );
+  // Public diagnostic error codes are not opaque authentication credentials.
+  if (!opaque || publicErrorCodes.has(opaque[0].toLowerCase())) return null;
+  return valueStart + opaque[0].length;
+}
+
 function redactString(value: string, depth = 0): string {
   if (depth >= maxJsonStringLayers) return "***";
   // A raw escaped fragment need not have its own surrounding JSON quotes.
@@ -222,14 +260,16 @@ function redactString(value: string, depth = 0): string {
       lexer.lastIndex = end;
       continue;
     }
-    // A standalone bearer value has no field name but is still authentication data.
-    const bearer =
-      !quoted && /^bearer$/i.test(part)
-        ? /^[ \t]+[^\s"'<>\\,;]+/.exec(value.slice(lexer.lastIndex))
+    // All standalone schemes use the same value grammar, including quoted values.
+    const authenticationEnd =
+      !quoted &&
+      value[start - 1] !== "=" &&
+      /^[A-Za-z][!#$%&'*+.^_`|~0-9A-Za-z-]*$/.test(part)
+        ? standaloneAuthenticationEnd(value, lexer.lastIndex, depth)
         : null;
-    if (bearer) {
+    if (authenticationEnd !== null) {
       result += part + " ***";
-      end = lexer.lastIndex + bearer[0].length;
+      end = authenticationEnd;
       lexer.lastIndex = end;
       continue;
     }

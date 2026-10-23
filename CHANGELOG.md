@@ -29,6 +29,9 @@ and this project follows [Semantic Versioning](https://semver.org/).
   the scheme plus `***`, masking every parameter through end of line or the full
   quoted/JSON value. This includes Digest, AWS4-HMAC-SHA256 and unknown schemes;
   external JSON metadata remains separate from the masked header value.
+- Standalone authentication schemes share one credential grammar for token68,
+  quoted values and parameter lists, including unknown scheme names and escaped
+  diagnostics. The scheme stays visible while its credential becomes `***`.
 
 ### Added
 
