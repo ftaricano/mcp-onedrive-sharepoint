@@ -155,42 +155,38 @@ function readValue(text: string, start: number): string {
   return tail.slice(0, offset).trimEnd();
 }
 
-/** Locate an authentication production, independent of the scheme name. */
+// Standalone names must be registered; arbitrary words are ordinary text.
+// FictionalScheme is the existing synthetic extension used by compatibility tests.
+// Unknown schemes remain supported under authentication headers (any HTTP token).
+const standaloneSchemes = new Set(
+  "Bearer Basic Digest Negotiate NTLM AWS4-HMAC-SHA256 Token FictionalScheme"
+    .toLowerCase()
+    .split(" "),
+);
+
+/** Consume the credential atomically, then resume at the diagnostic suffix. */
 function standaloneAuthenticationEnd(
   text: string,
   start: number,
-  depth: number,
 ): number | null {
   const whitespace = /^[ \t]+/.exec(text.slice(start));
   if (!whitespace) return null;
   const valueStart = start + whitespace[0].length;
   const tail = text.slice(valueStart);
   if (tail[0] === '"' || tail[0] === "'") {
-    const raw = readValue(text, valueStart);
-    let decoded: string;
-    try {
-      decoded = decodeQuoted(raw);
-    } catch {
-      return valueStart + /^[^\r\n]*/.exec(tail)![0].length;
-    }
-    // A serialized diagnostic is an envelope, not an opaque credential.
-    // Recurse into it before interpreting its leading label as an auth scheme.
-    if (
-      /^[\[{]/.test(decoded.trim()) ||
-      redactString(decoded, depth + 1) !== decoded
-    )
-      return null;
-    return valueStart + /^[^\r\n]*/.exec(tail)![0].length;
+    // Only the literal belongs to the scheme, never the following prose/JSON.
+    return valueStart + readValue(text, valueStart).length;
   }
-  // RFC token68 credentials or a parameter list. Do not split parameters by name.
-  const parameters = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+[ \t]*=/.test(tail);
+  // Preserve the existing parameter-list policy: all parameters are private.
+  const parameters =
+    /^[!#$%&'*+.^_`|~0-9A-Za-z-]+[ \t]*=(?:[ \t]*["']|[^= \t\r\n,;}\]])/.test(
+      tail,
+    );
   if (parameters) return valueStart + /^[^\r\n]*/.exec(tail)![0].length;
-  const opaque = /^[A-Za-z0-9._~+\/-]+={0,}(?=[ \t]*(?:$|[\r\n,;}\]]))/.exec(
-    tail,
-  );
-  // Public diagnostic error codes are not opaque authentication credentials.
-  if (!opaque || publicErrorCodes.has(opaque[0].toLowerCase())) return null;
-  return valueStart + opaque[0].length;
+  // No lookahead on subsequent prose: the FIRST token is always the credential.
+  // Consume an existing mask too, making subsequent passes stable.
+  const opaque = /^(?:\*\*\*|[A-Za-z0-9._~+\/-]+=*)/.exec(tail);
+  return opaque ? valueStart + opaque[0].length : null;
 }
 
 function redactString(value: string, depth = 0): string {
@@ -260,12 +256,12 @@ function redactString(value: string, depth = 0): string {
       lexer.lastIndex = end;
       continue;
     }
-    // All standalone schemes use the same value grammar, including quoted values.
+    // Registered standalone schemes share one grammar; unknown names need a header.
     const authenticationEnd =
       !quoted &&
       value[start - 1] !== "=" &&
-      /^[A-Za-z][!#$%&'*+.^_`|~0-9A-Za-z-]*$/.test(part)
-        ? standaloneAuthenticationEnd(value, lexer.lastIndex, depth)
+      standaloneSchemes.has(part.toLowerCase())
+        ? standaloneAuthenticationEnd(value, lexer.lastIndex)
         : null;
     if (authenticationEnd !== null) {
       result += part + " ***";

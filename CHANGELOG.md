@@ -8,6 +8,11 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- Mask the first standalone authentication credential even before diagnostic prose,
+  preserving its suffix and JSON boundaries. Restrict standalone schemes to a
+  registered set so ordinary multiword file names remain readable; unknown
+  schemes continue to be masked in authentication headers.
+
 - Mask signed download URLs, authentication query values and authorization headers
   in tool responses, CLI output and diagnostics; retain URL host and path only.
   Signed URLs in output are diagnostic values and must not be reused for requests.

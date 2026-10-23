@@ -850,3 +850,135 @@ test("standalone authentication preserves outer JSON metadata and public diagnos
     "Authentication Error: expired",
   );
 });
+
+// Round 8: a credential belongs to its scheme, irrespective of following prose.
+const proseSchemes = [...authenticationSchemes, "Token"];
+const proseCredentialForms: Array<[string, string]> = [
+  ["bare", canary],
+  ["padded-token68", `${canary}==`],
+  ["double-quoted", JSON.stringify(canary)],
+  ["single-quoted", `'${canary}'`],
+];
+for (const scheme of proseSchemes) {
+  for (const [form, credential] of proseCredentialForms) {
+    for (const suffix of [" expired", ", expired", "! expired"]) {
+      for (const [representation, layers, raw] of representations) {
+        test(`credential before prose ${scheme} / ${form} / ${suffix} / ${representation}`, (t) => {
+          const line = `${scheme} ${credential}${suffix}`;
+          const metadata = {
+            message: line,
+            name: "Monthly Report.xlsx",
+            code: "InvalidAuthenticationToken",
+            eTag: '"v1"',
+            cTag: '"c1"',
+            url: base,
+          };
+          const diagnostic = `diagnostic ${encodeDiagnostic(JSON.stringify(metadata), layers, raw)}`;
+          const envelope = jsonTextResponse({ ...metadata, diagnostic });
+          const consoleLog = t.mock.method(console, "log", () => {});
+          AuditLogger.log("upload", "fictional-user", diagnostic, "failure", {
+            diagnostic,
+          });
+          for (const output of [
+            redactOutput(line),
+            redactOutput(diagnostic),
+            envelope.content[0].text,
+            redactOutput(envelope.content[0].text),
+            JSON.stringify(
+              toolErrorResponse("upload_file", new Error(diagnostic)),
+            ),
+            createUserFriendlyError(new Error(diagnostic)),
+            SecurityValidator.sanitizeForLogging(diagnostic),
+            SecurityValidator.sanitizeForLogging({ diagnostic }),
+            JSON.stringify(AuditLogger.getRecentLogs(1)),
+            JSON.stringify(consoleLog.mock.calls),
+          ]) {
+            assert.ok(!output.includes(canary));
+            assert.ok(output.includes(`${scheme} ***${suffix}`));
+          }
+          const fields = JSON.parse(envelope.content[0].text);
+          assert.deepEqual(fields, {
+            ...metadata,
+            message: `${scheme} ***${suffix}`,
+            diagnostic: redactOutput(diagnostic),
+          });
+          assert.equal(redactOutput(line), `${scheme} ***${suffix}`);
+          assert.equal(
+            redactOutput(redactOutput(line)),
+            `${scheme} ***${suffix}`,
+          );
+          // Decode preserved envelopes, proving commas/quotes/braces still delimit metadata.
+          let recovered = redactOutput(diagnostic).slice("diagnostic ".length);
+          for (let layer = 0; layer < layers; layer++) {
+            recovered = JSON.parse(raw ? '"' + recovered + '"' : recovered);
+          }
+          assert.deepEqual(JSON.parse(recovered), {
+            ...metadata,
+            message: `${scheme} ***${suffix}`,
+          });
+        });
+      }
+    }
+  }
+  for (const [representation, layers, raw] of representations) {
+    test(`CLI credential before prose ${scheme} / ${representation}`, () => {
+      const diagnostic = encodeDiagnostic(
+        `${scheme} ${canary} expired`,
+        layers,
+        raw,
+      );
+      const child = spawnSync(
+        process.execPath,
+        [fileURLToPath(new URL("../cli.js", import.meta.url)), diagnostic],
+        {
+          encoding: "utf8",
+          env: { MCP_TOOL_PROFILE: "core" },
+        },
+      );
+      assert.equal(child.status, 1);
+      assert.equal(child.stdout, "");
+      assert.ok(!child.stderr.includes(canary));
+      assert.ok(child.stderr.includes(`${scheme} *** expired`));
+    });
+  }
+}
+
+test("review example and successive authentication credentials retain their suffixes", () => {
+  const diagnostic = "Bearer fictional-sensitive-canary expired";
+  assert.equal(redactOutput(diagnostic), "Bearer *** expired");
+  assert.equal(
+    redactOutput(
+      `Bearer ${canary} expired; Basic '${canary}' invalid; refresh_token=fictional-followup-canary`,
+    ),
+    "Bearer *** expired; Basic *** invalid; refresh_token=***",
+  );
+});
+
+test("unknown schemes require authentication headers; ordinary multiword metadata survives", () => {
+  const ordinary = {
+    name: "Monthly Report.xlsx",
+    message: "Monthly Report.xlsx expired",
+    code: "NotFound",
+    eTag: '"v1"',
+    cTag: '"c1"',
+    url: base,
+  };
+  assert.deepEqual(redactSensitive(ordinary), ordinary);
+  assert.deepEqual(
+    JSON.parse(redactOutput(JSON.stringify(ordinary))),
+    ordinary,
+  );
+  for (const header of authenticationHeaders) {
+    for (const [name, layers, raw] of representations) {
+      const input = {
+        ...ordinary,
+        [header]: `UnregisteredAuth ${canary} expired`,
+      };
+      const text = encodeDiagnostic(JSON.stringify(input), layers, raw);
+      const output = redactOutput(text);
+      assert.ok(!output.includes(canary), name);
+      assert.ok(output.includes("UnregisteredAuth ***"), name);
+      assert.ok(output.includes(ordinary.name), name);
+    }
+  }
+});
