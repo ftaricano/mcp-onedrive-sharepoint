@@ -11,11 +11,16 @@ and this project follows [Semantic Versioning](https://semver.org/).
 - Mask signed download URLs, authentication query values and authorization headers
   in tool responses, CLI output and diagnostics; retain URL host and path only.
   Signed URLs in output are diagnostic values and must not be reused for requests.
+- Apply the same token field pattern to objects and embedded JSON diagnostics,
+  including `refresh_token` and `id_token`, while preserving Graph error codes.
 
 ### Added
 
 - Upload and download results expose `file.eTag` and `file.cTag` (null when absent).
   Downloads read metadata first and send `If-Match` when an eTag is available.
+  This conditional request applies to download only. `upload_file` exposes the
+  resulting tags but does not accept an expected eTag or enforce conditional upload;
+  conditional upload remains a separate follow-up.
   Version tags identify the remote item; they are not a local content checksum.
 
 ### Changed

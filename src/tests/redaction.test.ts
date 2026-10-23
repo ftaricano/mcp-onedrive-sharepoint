@@ -51,6 +51,51 @@ for (const key of [
     assert.ok(!redactOutput(text).includes(canary));
   });
 }
+// Match the token field family already supported by assignment diagnostics.
+for (const key of [
+  "token",
+  "access_token",
+  "refresh_token",
+  "id_token",
+  "custom_token",
+  "sessionToken",
+  "refresh-token",
+  "REFRESH_TOKEN",
+]) {
+  test(`redacts token field ${key} across structured and textual boundaries`, () => {
+    const input = {
+      nested: [{ [key]: canary }],
+      code: "InvalidAuthenticationToken",
+    };
+    const structured = jsonTextResponse(input).content[0].text;
+    const serialized = redactOutput(JSON.stringify(input));
+    const diagnostic = redactOutput(`diagnostic ${JSON.stringify(input)}`);
+    const error = toolErrorResponse("upload_file", {
+      error: {
+        code: "InvalidAuthenticationToken",
+        message: `diagnostic ${JSON.stringify(input)}`,
+      },
+    });
+
+    assert.equal(JSON.parse(structured).nested[0][key], "***");
+    assert.equal(JSON.parse(serialized).nested[0][key], "***");
+    for (const output of [
+      structured,
+      serialized,
+      diagnostic,
+      JSON.stringify(error),
+    ]) {
+      assert.ok(!output.includes(canary));
+      assert.ok(output.includes("***"));
+      assert.ok(output.includes("InvalidAuthenticationToken"));
+    }
+    assert.equal(
+      JSON.parse(error.content[1].text).error.code,
+      "InvalidAuthenticationToken",
+    );
+    assert.equal(input.nested[0][key], canary);
+  });
+}
 for (const input of [
   `Authorization: Basic ${canary}`,
   `Authorization: Bearer ${canary}==`,

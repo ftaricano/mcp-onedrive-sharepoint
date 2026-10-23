@@ -1,6 +1,13 @@
 /** Redact output only; never pass these values back into Graph requests. */
-const sensitiveKey =
-  /^(?:@microsoft\.graph\.downloadurl|downloadurl|tempauth|token|access_token|authorization|proxy-authorization)$/i;
+// Keep token field names identical across objects and embedded JSON diagnostics.
+// Do not include "code": ordinary Graph error codes must remain readable.
+const tokenKeyPattern = String.raw`[\w-]*token[\w-]*`;
+const sensitiveKeyPattern = String.raw`(?:@microsoft\.graph\.downloadurl|downloadurl|tempauth|${tokenKeyPattern}|authorization|proxy-authorization)`;
+const sensitiveKey = new RegExp(`^${sensitiveKeyPattern}$`, "i");
+const sensitiveTextField = new RegExp(
+  String.raw`(["']${sensitiveKeyPattern}["']\s*:\s*)(["'])(.*?)\2`,
+  "gi",
+);
 const signedQuery = /[?&](?:tempauth|sig|se|[^=&]*token[^=&]*|code)=/i;
 
 function isSignedUrl(value: string): boolean {
@@ -26,7 +33,7 @@ function safeUrl(value: string): string {
 function redactString(value: string): string {
   return value
     .replace(
-      /(["'](?:@microsoft\.graph\.downloadurl|downloadurl|tempauth|access_token|token|authorization|proxy-authorization)["']\s*:\s*)(["'])(.*?)\2/gi,
+      sensitiveTextField,
       (_match, prefix, quote, entry: string) =>
         `${prefix}${quote}${/^https?:\/\//i.test(entry) ? safeUrl(entry) : "***"}${quote}`,
     )
