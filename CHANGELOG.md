@@ -16,6 +16,8 @@ and this project follows [Semantic Versioning](https://semver.org/).
 - Redact sensitive fields inside escaped JSON string literals in diagnostics,
   errors and audit logs, including multiple serialization layers. Bound excessive
   nesting with a masked value rather than returning uninspected text.
+- Preserve the association between authorization header names and quoted values
+  while masking diagnostics, without consuming adjacent JSON fields.
 
 ### Added
 

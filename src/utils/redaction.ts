@@ -62,8 +62,17 @@ function redactString(value: string, depth = 0): string {
   // Plain header matching must not consume the rest of an encoded JSON document.
   return fieldsMasked
     .split(/("(?:\\.|[^"\\])*")/g)
-    .map((part, index) => {
+    .map((part, index, parts) => {
       if (index % 2 === 0) return redactPlainText(part);
+      // A quoted header value belongs to the preceding plain-text prefix.
+      // Mask just this literal, leaving adjacent JSON fields intact.
+      if (
+        /\b(?:Authorization|Proxy-Authorization)\s*:\s*$/i.test(
+          parts[index - 1],
+        )
+      ) {
+        return '"***"';
+      }
       let decoded: string;
       try {
         decoded = JSON.parse(part) as string;

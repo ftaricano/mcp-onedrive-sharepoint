@@ -298,3 +298,68 @@ test("excessive escaped nesting fails closed", () => {
     ),
   );
 });
+
+for (const header of ["Authorization", "Proxy-Authorization"]) {
+  for (const scheme of ["Basic", "Bearer"]) {
+    for (const layers of [0, 1, 2]) {
+      test(`redacts quoted ${header} ${scheme} through ${layers} JSON layers`, (t) => {
+        const message = `${header}: "${scheme} ${canary}"`;
+        const diagnostic =
+          layers === 0
+            ? message
+            : escapedDiagnostic(
+                { message, code: "NotFound", name: "report.txt" },
+                layers,
+              );
+        const envelope = jsonTextResponse({ diagnostic, code: "NotFound" });
+        const consoleLog = t.mock.method(console, "log", () => {});
+        AuditLogger.log("upload", "fictional-user", diagnostic, "failure", {
+          diagnostic,
+        });
+        const outputs = [
+          redactOutput(diagnostic),
+          envelope.content[0].text,
+          redactOutput(envelope.content[0].text), // CLI's second pass
+          JSON.stringify(
+            toolErrorResponse("upload_file", new Error(diagnostic)),
+          ),
+          createUserFriendlyError(new Error(diagnostic)),
+          SecurityValidator.sanitizeForLogging(diagnostic),
+          SecurityValidator.sanitizeForLogging({ diagnostic }),
+          JSON.stringify(AuditLogger.getRecentLogs(1)),
+          JSON.stringify(consoleLog.mock.calls),
+        ];
+        for (const output of outputs) {
+          assert.ok(!output.includes(canary));
+          assert.ok(output.includes("***"));
+        }
+        assert.equal(JSON.parse(envelope.content[0].text).code, "NotFound");
+        if (layers > 0) {
+          let decoded = redactOutput(diagnostic).slice("diagnostic ".length);
+          for (let layer = 0; layer < layers; layer++)
+            decoded = JSON.parse(decoded).body;
+          const fields = JSON.parse(decoded);
+          assert.equal(fields.code, "NotFound");
+          assert.equal(fields.name, "report.txt");
+          assert.ok(!fields.message.includes(canary));
+        }
+        const child = spawnSync(
+          process.execPath,
+          [fileURLToPath(new URL("../cli.js", import.meta.url)), diagnostic],
+          { encoding: "utf8", env: { MCP_TOOL_PROFILE: "core" } },
+        );
+        assert.equal(child.status, 1);
+        assert.equal(child.stdout, "");
+        assert.ok(!child.stderr.includes(canary));
+        assert.ok(child.stderr.includes("***"));
+      });
+    }
+    test(`quoted ${header} ${scheme} preserves adjacent JSON fields`, () => {
+      const diagnostic = `diagnostic {${header}: "${scheme} ${canary}", "code":"NotFound", "name":"report.txt"}`;
+      const output = redactOutput(diagnostic);
+      assert.ok(!output.includes(canary));
+      assert.ok(output.includes('"code":"NotFound"'));
+      assert.ok(output.includes('"name":"report.txt"'));
+    });
+  }
+}
