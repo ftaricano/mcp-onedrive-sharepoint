@@ -25,6 +25,11 @@ and this project follows [Semantic Versioning](https://semver.org/).
   error codes are preserved via an explicit public diagnostic-code allowlist;
   unknown code values and all code query/equals assignments are masked.
 
+- Authorization, Proxy-Authorization and WWW-Authenticate output preserves only
+  the scheme plus `***`, masking every parameter through end of line or the full
+  quoted/JSON value. This includes Digest, AWS4-HMAC-SHA256 and unknown schemes;
+  external JSON metadata remains separate from the masked header value.
+
 ### Added
 
 - Upload and download results expose `file.eTag` and `file.cTag` (null when absent).

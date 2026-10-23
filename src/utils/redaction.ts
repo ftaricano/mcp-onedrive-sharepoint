@@ -1,7 +1,8 @@
 /** Redact output only; never pass these values back into Graph requests. */
 // One field policy for structured objects and all textual assignment syntaxes.
 const sensitiveKey =
-  /^(?:[\w-]*token[\w-]*|client_secret|password|sig|se|code|tempauth|(?:@microsoft\.graph\.)?downloadurl|(?:proxy-)?authorization)$/i;
+  /^(?:[\w-]*token[\w-]*|client_secret|password|sig|se|code|tempauth|(?:@microsoft\.graph\.)?downloadurl|(?:proxy-)?authorization|www-authenticate)$/i;
+const authenticationHeader = /^(?:(?:proxy-)?authorization|www-authenticate)$/i;
 // Only known diagnostic codes are public. An arbitrary value in "code" is secret.
 // Query parameters and = assignments never use this exception.
 const publicErrorCodes = new Set(
@@ -62,12 +63,34 @@ function redactUrl(value: string): string {
   }
 }
 
+function maskAuthenticationHeader(value: unknown): string {
+  if (typeof value !== "string") return "***";
+  // The first HTTP token is the scheme; every parameter/credential is private.
+  // A lone opaque value has no independently identifiable scheme: fail closed.
+  const scheme = /^([!#$%&'*+.^_`|~0-9A-Za-z-]+)[ \t]+\S/.exec(value.trim());
+  return scheme ? `${scheme[1].replace(jwt, "***")} ***` : "***";
+}
+
+function readAuthenticationHeader(
+  text: string,
+  start: number,
+  jsonField: boolean,
+): string {
+  const tail = text.slice(start);
+  // JSON/shell quotes bound the complete value, not individual parameters.
+  if (jsonField && (tail[0] === '"' || tail[0] === "'"))
+    return readValue(text, start);
+  // On a diagnostic header line, commas and k=v pairs are part of the header.
+  return /^[^\r\n]*/.exec(tail)![0];
+}
+
 function maskField(
   key: string,
   value: unknown,
   diagnosticCode: boolean,
 ): unknown {
   if (!sensitiveKey.test(key)) return value;
+  if (authenticationHeader.test(key)) return maskAuthenticationHeader(value);
   if (
     diagnosticCode &&
     key.toLowerCase() === "code" &&
@@ -174,11 +197,17 @@ function redactString(value: string, depth = 0): string {
     const separator = /^\s*[:=]\s*/.exec(value.slice(lexer.lastIndex));
     if (separator && sensitiveKey.test(decoded)) {
       const valueStart = lexer.lastIndex + separator[0].length;
-      const raw = readValue(value, valueStart);
+      const raw = authenticationHeader.test(decoded)
+        ? readAuthenticationHeader(
+            value,
+            valueStart,
+            quoted || /[\[{,]\s*$/.test(value.slice(0, start)),
+          )
+        : readValue(value, valueStart);
       const quote = raw[0] === '"' || raw[0] === "'" ? raw[0] : "";
       let entry: string;
       try {
-        entry = quote ? decodeQuoted(raw) : raw;
+        entry = quote ? decodeQuoted(raw.trim()) : raw;
       } catch {
         entry = "***";
       }

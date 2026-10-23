@@ -521,14 +521,31 @@ test("generic assignments preserve adjacent fields and quoted delimiters", () =>
       const text = `diagnostic {${JSON.stringify(key)}:${JSON.stringify(value)},"name":"report.txt","eTag":"v1","cTag":"c1","code":"NotFound"}`;
       const output = redactOutput(text).slice("diagnostic ".length);
       const parsed = JSON.parse(output);
-      assert.equal(parsed[key], key === "code" ? "NotFound" : "***");
+      const isHeader = /^(?:(?:proxy-)?authorization|www-authenticate)$/i.test(
+        key,
+      );
+      assert.equal(
+        parsed[key],
+        key === "code"
+          ? "NotFound"
+          : isHeader && value.startsWith("prefix ")
+            ? "prefix ***"
+            : "***",
+      );
       assert.equal(parsed.name, "report.txt");
       assert.equal(parsed.eTag, "v1");
       assert.equal(parsed.cTag, "c1");
       assert.equal(parsed.code, "NotFound");
       assert.ok(!output.includes(canary));
     }
-    const output = redactOutput(`${key}=${canary} eTag=v1 cTag=c1`);
+    const isHeader = /^(?:(?:proxy-)?authorization|www-authenticate)$/i.test(
+      key,
+    );
+    const output = redactOutput(
+      isHeader
+        ? JSON.stringify({ [key]: canary, diagnostic: "eTag=v1 cTag=c1" })
+        : `${key}=${canary} eTag=v1 cTag=c1`,
+    );
     assert.ok(!output.includes(canary));
     assert.ok(output.includes("eTag=v1 cTag=c1"));
   }
@@ -562,7 +579,10 @@ test("compound scalar values keep quotes bound to their field", () => {
       `prefix"${canary}"suffix`,
       `prefix'${canary}'suffix`,
     ]) {
-      const diagnostic = `${key}=${value} eTag=v1`;
+      const diagnostic =
+        /^(?:(?:proxy-)?authorization|www-authenticate)$/i.test(key)
+          ? JSON.stringify({ [key]: value, diagnostic: "eTag=v1" })
+          : `${key}=${value} eTag=v1`;
       const output = redactOutput(diagnostic);
       assert.ok(!output.includes(canary));
       assert.ok(output.includes("eTag=v1"));
@@ -576,6 +596,160 @@ test("field/value association survives whitespace around either separator", () =
       const input = `diagnostic ${JSON.stringify(key)} \r\n ${delimiter} \r\n "${canary}"`;
       assert.ok(!redactOutput(input).includes(canary));
       assert.ok(!jsonTextResponse({ input }).content[0].text.includes(canary));
+    }
+  }
+});
+
+const authenticationHeaders = [
+  "Authorization",
+  "Proxy-Authorization",
+  "WWW-Authenticate",
+];
+const authenticationSchemes = [
+  "Bearer",
+  "Basic",
+  "Digest",
+  "NTLM",
+  "Negotiate",
+  "AWS4-HMAC-SHA256",
+  "FictionalScheme",
+];
+const parameterCanaries = [
+  "fictional-username-canary",
+  "fictional-response-canary",
+  "fictional-nonce-canary",
+  "fictional-credential-canary",
+  "fictional-signature-canary",
+  "fictional-extra-canary",
+];
+// Every scheme gets parameters, including unknown names and mixed delimiters:
+// no parameter-name allowlist can accidentally make this matrix pass.
+function parameterizedHeader(scheme: string): string {
+  return `${scheme} username="${parameterCanaries[0]}", response="${parameterCanaries[1]}", nonce="${parameterCanaries[2]}", Credential=${parameterCanaries[3]}, Signature=${parameterCanaries[4]}; opaque=${parameterCanaries[5]}`;
+}
+for (const header of authenticationHeaders) {
+  for (const key of [header, header.toLowerCase()]) {
+    for (const scheme of authenticationSchemes) {
+      const value = parameterizedHeader(scheme);
+      const line = `${key}: ${value}`;
+      const formats: Array<[string, string]> = [
+        ["line", line],
+        [
+          "json-field",
+          JSON.stringify({
+            [key]: value,
+            code: "NotFound",
+            name: "report.txt",
+          }),
+        ],
+        [
+          "json-message",
+          `diagnostic ${JSON.stringify({ message: line, code: "NotFound", name: "report.txt" })}`,
+        ],
+        ["serialized-1", encodeDiagnostic(line, 1, false)],
+        ["serialized-2", encodeDiagnostic(line, 2, false)],
+        ["raw-escape-1", encodeDiagnostic(line, 1, true)],
+        ["raw-escape-2", encodeDiagnostic(line, 2, true)],
+      ];
+      for (const [format, text] of formats) {
+        test(`authentication header ${key} / ${scheme} / ${format}`, (t) => {
+          const diagnostic =
+            format === "json-field" ? text : `diagnostic ${text}`;
+          const envelope = jsonTextResponse({
+            diagnostic,
+            eTag: '"v1"',
+            cTag: '"c1"',
+            code: "NotFound",
+          });
+          const consoleLog = t.mock.method(console, "log", () => {});
+          AuditLogger.log("upload", "fictional-user", diagnostic, "failure", {
+            diagnostic,
+          });
+          const outputs = [
+            redactOutput(diagnostic),
+            envelope.content[0].text,
+            redactOutput(envelope.content[0].text),
+            JSON.stringify(
+              toolErrorResponse("upload_file", new Error(diagnostic)),
+            ),
+            createUserFriendlyError(new Error(diagnostic)),
+            SecurityValidator.sanitizeForLogging(diagnostic),
+            SecurityValidator.sanitizeForLogging({ diagnostic }),
+            JSON.stringify(AuditLogger.getRecentLogs(1)),
+            JSON.stringify(consoleLog.mock.calls),
+          ];
+          for (const output of outputs) {
+            for (const sentinel of parameterCanaries)
+              assert.ok(!output.includes(sentinel));
+            assert.ok(output.includes(`${scheme} ***`));
+            for (const parameter of [
+              "username=",
+              "response=",
+              "nonce=",
+              "Credential=",
+              "Signature=",
+              "opaque=",
+            ]) {
+              assert.ok(!output.includes(parameter));
+            }
+          }
+          const parsed = JSON.parse(envelope.content[0].text);
+          assert.equal(parsed.eTag, '"v1"');
+          assert.equal(parsed.cTag, '"c1"');
+          assert.equal(parsed.code, "NotFound");
+          if (format === "json-field") {
+            const fields = JSON.parse(outputs[0]);
+            assert.equal(fields[key], `${scheme} ***`);
+            assert.equal(fields.name, "report.txt");
+            assert.equal(fields.code, "NotFound");
+          }
+          assert.equal(redactOutput(line), `${key}: ${scheme} ***`);
+          assert.equal(
+            redactOutput(`${key}: ${scheme} ***`),
+            `${key}: ${scheme} ***`,
+          );
+          const structured = JSON.parse(
+            jsonTextResponse({ [key]: value, eTag: '"v1"' }).content[0].text,
+          );
+          assert.equal(structured[key], `${scheme} ***`);
+          assert.equal(structured.eTag, '"v1"');
+        });
+      }
+      test(`CLI header ${key} / ${scheme} without bootstrap`, () => {
+        const child = spawnSync(
+          process.execPath,
+          [fileURLToPath(new URL("../cli.js", import.meta.url)), line],
+          { encoding: "utf8", env: { MCP_TOOL_PROFILE: "core" } },
+        );
+        assert.equal(child.status, 1);
+        assert.equal(child.stdout, "");
+        for (const sentinel of parameterCanaries)
+          assert.ok(!child.stderr.includes(sentinel));
+        assert.ok(child.stderr.includes(`${scheme} ***`));
+      });
+    }
+  }
+}
+
+test("authentication line consumes every parameter through EOL, preserving following lines", () => {
+  for (const header of authenticationHeaders) {
+    const text = `${header}: ${parameterizedHeader("Digest")}\r\nname: report.txt`;
+    const output = redactOutput(text);
+    assert.equal(output, `${header}: Digest ***\r\nname: report.txt`);
+  }
+});
+
+test("plain authentication lines never resume after a quoted component", () => {
+  for (const header of authenticationHeaders) {
+    for (const text of [
+      `${header}: "Digest" username="${parameterCanaries[0]}", response="${parameterCanaries[1]}"`,
+      `${header}: 'Digest' nonce='${parameterCanaries[2]}'`,
+      `${header}: "Basic ${parameterCanaries[0]}" extra=${parameterCanaries[1]}`,
+    ]) {
+      const output = redactOutput(text);
+      for (const sentinel of parameterCanaries)
+        assert.ok(!output.includes(sentinel));
+      assert.ok(output.includes("***"));
     }
   }
 });
