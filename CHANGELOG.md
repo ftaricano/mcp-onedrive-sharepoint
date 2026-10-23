@@ -18,6 +18,12 @@ and this project follows [Semantic Versioning](https://semver.org/).
   nesting with a masked value rather than returning uninspected text.
 - Preserve the association between authorization header names and quoted values
   while masking diagnostics, without consuming adjacent JSON fields.
+- Unify sensitive field masking across objects, assignments, quoted values,
+  headers and escaped diagnostics, including passwords and client secrets.
+  Mask standalone JWT-shaped values and all SharePoint query strings, including
+  unknown signing parameter names, while retaining URL host/path. Ordinary Graph
+  error codes are preserved via an explicit public diagnostic-code allowlist;
+  unknown code values and all code query/equals assignments are masked.
 
 ### Added
 

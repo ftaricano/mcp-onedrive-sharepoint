@@ -130,7 +130,7 @@ test("download URL fields retain only host and path even for unknown query names
 });
 test("redaction is idempotent and keeps ordinary metadata and unsigned URLs", () => {
   const input = {
-    url: `${base}?view=1`,
+    url: "https://example.com/documents/report.xlsx?view=1",
     size: 10,
     code: "NotFound",
     eTag: '"v1"',
@@ -363,3 +363,219 @@ for (const header of ["Authorization", "Proxy-Authorization"]) {
     });
   }
 }
+
+// Full field policy × syntax × representation × case matrix. No real credentials.
+const matrixKeys = [
+  "access_token",
+  "refresh_token",
+  "id_token",
+  "client_secret",
+  "password",
+  "token",
+  "sig",
+  "se",
+  "code",
+  "tempauth",
+  "downloadUrl",
+  "@microsoft.graph.downloadUrl",
+  "Authorization",
+  "Proxy-Authorization",
+  "x-ms-access-token",
+  "x-ms-custom-token",
+];
+const assignmentForms: Array<[string, (key: string) => string]> = [
+  ["equals", (key) => `${key}=${canary}`],
+  ["colon", (key) => `${key}: ${canary}`],
+  ["json", (key) => JSON.stringify({ [key]: canary })],
+  ["single-quotes", (key) => `{'${key}':'${canary}'}`],
+  ["quoted-equals", (key) => `${key}="${canary}"`],
+  ["single-quoted-equals", (key) => `${key}='${canary}'`],
+  ["bearer", (key) => `${key}: Bearer ${canary}`],
+  ["basic", (key) => `${key}: Basic ${canary}`],
+  ["other-scheme", (key) => `${key}: FictionalScheme ${canary}`],
+  ["query", (key) => `${base}?view=public&${key}=${canary}`],
+];
+function encodeDiagnostic(value: string, layers: number, raw: boolean): string {
+  for (let layer = 0; layer < layers; layer++) {
+    value = JSON.stringify(value);
+    if (raw) value = value.slice(1, -1);
+  }
+  return value;
+}
+const representations: Array<[string, number, boolean]> = [
+  ["plain", 0, false],
+  ["json-1", 1, false],
+  ["json-2", 2, false],
+  ["raw-escape-1", 1, true],
+  ["raw-escape-2", 2, true],
+];
+for (const field of matrixKeys) {
+  for (const key of [field, field.toUpperCase()]) {
+    test(`matrix structured field ${key}`, () => {
+      const input = { nested: [{ [key]: canary }], name: "report.txt" };
+      const output = JSON.parse(jsonTextResponse(input).content[0].text);
+      assert.equal(output.nested[0][key], "***");
+      assert.equal(output.name, "report.txt");
+      assert.equal(input.nested[0][key], canary);
+    });
+    for (const [syntax, form] of assignmentForms) {
+      for (const [representation, layers, raw] of representations) {
+        test(`matrix ${key} / ${syntax} / ${representation}`, () => {
+          const diagnostic = `diagnostic ${encodeDiagnostic(form(key), layers, raw)}`;
+          const envelope = jsonTextResponse({
+            diagnostic,
+            eTag: '"v1"',
+            cTag: '"c1"',
+          });
+          const outputs = [
+            redactOutput(diagnostic),
+            JSON.stringify(redactSensitive({ diagnostic })),
+            envelope.content[0].text,
+            redactOutput(envelope.content[0].text),
+            JSON.stringify(
+              toolErrorResponse("upload_file", new Error(diagnostic)),
+            ),
+            SecurityValidator.sanitizeForLogging(diagnostic),
+            SecurityValidator.sanitizeForLogging({ diagnostic }),
+          ];
+          for (const output of outputs) {
+            assert.ok(!output.includes(canary));
+            assert.ok(output.includes("***"));
+          }
+          const parsed = JSON.parse(envelope.content[0].text);
+          assert.equal(parsed.eTag, '"v1"');
+          assert.equal(parsed.cTag, '"c1"');
+          if (syntax === "query") assert.ok(outputs[0].includes(base));
+        });
+      }
+    }
+  }
+}
+
+for (const layers of [0, 1, 2]) {
+  test(`public metadata remains readable through ${layers} layers`, () => {
+    const fields = {
+      name: "report.txt",
+      code: "InvalidAuthenticationToken",
+      eTag: '"v1"',
+      cTag: '"c1"',
+      url: base,
+    };
+    const text = `diagnostic ${encodeDiagnostic(JSON.stringify(fields), layers, false)}`;
+    assert.equal(redactOutput(text), text);
+    const output = redactSensitive(fields);
+    assert.deepEqual(output, fields);
+  });
+  test(`JWT and unknown SharePoint signing key through ${layers} layers`, () => {
+    const fictionalJwt = "ZmFrZS1oZWFkZXI.ZmFrZS1wYXlsb2Fk.ZmFrZS1zaWduYXR1cmU";
+    for (const input of [
+      fictionalJwt,
+      `unrecognized=${fictionalJwt}`,
+      `${base}?opaque=${canary}#${canary}`,
+      `https://example.com/file?opaque=${fictionalJwt}`,
+      `https://example.com/${fictionalJwt}`,
+      `downloadUrl=https://example.com/${fictionalJwt}?opaque=${canary}`,
+    ]) {
+      const text = `diagnostic ${encodeDiagnostic(input, layers, false)}`;
+      for (const output of [
+        redactOutput(text),
+        jsonTextResponse({ text }).content[0].text,
+        JSON.stringify(toolErrorResponse("upload_file", new Error(text))),
+        SecurityValidator.sanitizeForLogging(text),
+      ]) {
+        assert.ok(!output.includes(canary));
+        assert.ok(!output.includes(fictionalJwt));
+        assert.ok(output.includes("***"));
+        if (input.startsWith(base)) assert.ok(output.includes(base));
+      }
+    }
+  });
+}
+
+test("known error codes stay public only in diagnostic fields", () => {
+  for (const code of [
+    "NotFound",
+    "InvalidAuthenticationToken",
+    "accessDenied",
+    "ECONNRESET",
+    "UnknownError",
+  ]) {
+    const input = { code, eTag: '"v1"' };
+    assert.deepEqual(redactSensitive(input), input);
+    assert.ok(
+      redactOutput(`diagnostic ${JSON.stringify(input)}`).includes(code),
+    );
+    assert.ok(!redactOutput(`code=${code}`).includes(code));
+    assert.ok(!redactOutput(`${base}?code=${code}`).includes(code));
+  }
+});
+
+test("generic assignments preserve adjacent fields and quoted delimiters", () => {
+  for (const key of matrixKeys) {
+    for (const value of [
+      canary,
+      `${canary}, extra; & detail`,
+      `prefix "${canary}" suffix`,
+      `prefix '${canary}' suffix`,
+    ]) {
+      const text = `diagnostic {${JSON.stringify(key)}:${JSON.stringify(value)},"name":"report.txt","eTag":"v1","cTag":"c1","code":"NotFound"}`;
+      const output = redactOutput(text).slice("diagnostic ".length);
+      const parsed = JSON.parse(output);
+      assert.equal(parsed[key], key === "code" ? "NotFound" : "***");
+      assert.equal(parsed.name, "report.txt");
+      assert.equal(parsed.eTag, "v1");
+      assert.equal(parsed.cTag, "c1");
+      assert.equal(parsed.code, "NotFound");
+      assert.ok(!output.includes(canary));
+    }
+    const output = redactOutput(`${key}=${canary} eTag=v1 cTag=c1`);
+    assert.ok(!output.includes(canary));
+    assert.ok(output.includes("eTag=v1 cTag=c1"));
+  }
+});
+
+test("CLI masks generic quoted assignments before bootstrap", () => {
+  for (const key of [
+    "access_token",
+    "client_secret",
+    "password",
+    "x-ms-access-token",
+  ]) {
+    const diagnostic = `${key}="${canary}"`;
+    const child = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL("../cli.js", import.meta.url)), diagnostic],
+      { encoding: "utf8", env: { MCP_TOOL_PROFILE: "core" } },
+    );
+    assert.equal(child.status, 1);
+    assert.equal(child.stdout, "");
+    assert.ok(!child.stderr.includes(canary));
+    assert.ok(child.stderr.includes("***"));
+  }
+});
+
+test("compound scalar values keep quotes bound to their field", () => {
+  for (const key of matrixKeys) {
+    for (const value of [
+      `Basic "${canary}"`,
+      `FictionalScheme '${canary}'`,
+      `prefix"${canary}"suffix`,
+      `prefix'${canary}'suffix`,
+    ]) {
+      const diagnostic = `${key}=${value} eTag=v1`;
+      const output = redactOutput(diagnostic);
+      assert.ok(!output.includes(canary));
+      assert.ok(output.includes("eTag=v1"));
+    }
+  }
+});
+
+test("field/value association survives whitespace around either separator", () => {
+  for (const key of matrixKeys) {
+    for (const delimiter of ["=", ":"]) {
+      const input = `diagnostic ${JSON.stringify(key)} \r\n ${delimiter} \r\n "${canary}"`;
+      assert.ok(!redactOutput(input).includes(canary));
+      assert.ok(!jsonTextResponse({ input }).content[0].text.includes(canary));
+    }
+  }
+});

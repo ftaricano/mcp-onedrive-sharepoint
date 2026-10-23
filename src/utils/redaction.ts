@@ -1,105 +1,235 @@
 /** Redact output only; never pass these values back into Graph requests. */
-// Keep token field names identical across objects and embedded JSON diagnostics.
-// Do not include "code": ordinary Graph error codes must remain readable.
-const tokenKeyPattern = String.raw`[\w-]*token[\w-]*`;
-const sensitiveKeyPattern = String.raw`(?:@microsoft\.graph\.downloadurl|downloadurl|tempauth|${tokenKeyPattern}|authorization|proxy-authorization)`;
-const sensitiveKey = new RegExp(`^${sensitiveKeyPattern}$`, "i");
-const sensitiveTextField = new RegExp(
-  String.raw`(["']${sensitiveKeyPattern}["']\s*:\s*)(["'])(.*?)\2`,
-  "gi",
+// One field policy for structured objects and all textual assignment syntaxes.
+const sensitiveKey =
+  /^(?:[\w-]*token[\w-]*|client_secret|password|sig|se|code|tempauth|(?:@microsoft\.graph\.)?downloadurl|(?:proxy-)?authorization)$/i;
+// Only known diagnostic codes are public. An arbitrary value in "code" is secret.
+// Query parameters and = assignments never use this exception.
+const publicErrorCodes = new Set(
+  `InvalidAuthenticationToken AuthenticationFailure ExpiredAuthenticationToken
+MalformedAuthenticationToken InvalidTokenType TokenNotFound Unauthenticated Forbidden
+InsufficientScope AccessDenied Unauthorized InsufficientPrivileges InvalidPermission ConsentRequired
+UserNotInTenant NotFound ResourceNotFound ItemNotFound FileNotFound DriveItemNotFound SiteNotFound
+ListNotFound WorkbookNotFound WorksheetNotFound TooManyRequests RateLimitExceeded RequestThrottled
+ThrottledRequest ServiceUnavailable TemporarilyUnavailable InsufficientStorage QuotaExceeded
+StorageQuotaExceeded DiskQuotaExceeded FileSizeLimitExceeded ItemCountLimitExceeded BadRequest
+InvalidRequest InvalidParameter MalformedRequest InvalidRange InvalidFilter InvalidOrderBy
+ValidationError InvalidFileName InvalidPath UnsupportedMediaType Conflict ResourceModified
+ConcurrencyFailure NameAlreadyExists ItemAlreadyExists DuplicateName VersionConflict
+InternalServerError BadGateway GatewayTimeout ServiceError TemporaryFailure UnexpectedError
+NetworkError ConnectionError TimeoutError DNSError ConnectionRefused ConnectionTimeout ECONNRESET
+ECONNREFUSED ECONNABORTED ETIMEDOUT EAI_AGAIN ENOTFOUND EHOSTUNREACH ENETUNREACH EPIPE UnknownError
+generalException invalidRequest itemNotFound notSupported accessDenied unauthenticated
+activityLimitReached nameAlreadyExists resourceModified resyncRequired ErrorAccessDenied
+ErrorInvalidIdMalformed ErrorItemNotFound ErrorInvalidRequest ErrorInvalidUser UserNotFound
+Request_ResourceNotFound Authorization_RequestDenied invalid_client invalid_grant`
+    .toLowerCase()
+    .split(/\s+/),
 );
-const signedQuery = /[?&](?:tempauth|sig|se|[^=&]*token[^=&]*|code)=/i;
-
-function isSignedUrl(value: string): boolean {
-  if (signedQuery.test(value)) return true;
-  try {
-    return [...new URL(value).searchParams.keys()].some((key) =>
-      /^(?:tempauth|sig|se|code)$|token/i.test(key),
-    );
-  } catch {
-    return false;
-  }
-}
+const jwt =
+  /(?<![\w.-])[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?![\w.-])/g;
+const maxJsonStringLayers = 8;
 
 function safeUrl(value: string): string {
   try {
     const url = new URL(value);
-    return `${url.protocol}//${url.host}${url.pathname}?***`;
+    return `${url.protocol}//${url.host}${url.pathname.replace(jwt, "***")}?***`;
   } catch {
     return "***";
   }
 }
 
-function redactPlainText(value: string): string {
-  return value
-    .replace(/https?:\/\/[^\s"'<>\\]+/gi, (url) =>
-      isSignedUrl(url) ? safeUrl(url) : url,
-    )
-    .replace(
-      /\b(Authorization|Proxy-Authorization)\s*:\s*[^\r\n]+/gi,
-      "$1: ***",
-    )
-    .replace(/\bBearer\s+[^\s"'<>\\,;]+/gi, "Bearer ***")
-    .replace(
-      /\b(tempauth|sig|se|[\w-]*token[\w-]*|code)\s*=\s*[^\s&"'<>\\,;]+/gi,
-      "$1=***",
+function redactUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    // Unknown SharePoint signing parameters are private too: redact its whole query.
+    const sharepointQuery =
+      /(?:^|\.)sharepoint(?:-df|-mil)?\.(?:com|us|de|cn)$/i.test(
+        url.hostname,
+      ) &&
+      (url.search !== "" || url.hash !== "");
+    const signed = [...url.searchParams].some(
+      ([key, entry]) => sensitiveKey.test(key) || entry.match(jwt) !== null,
     );
+    if (sharepointQuery || signed) return safeUrl(value);
+    // Keep the URL authority readable; a hostname is not a JWT.
+    return value.replace(
+      /^(https?:\/\/[^/?#]+)(.*)$/i,
+      (_match, authority: string, rest: string) =>
+        authority + rest.replace(jwt, "***"),
+    );
+  } catch {
+    return "***";
+  }
 }
 
-// Decode JSON string literals inside diagnostics before matching sensitive fields.
-// Re-encode only changed literals, preserving prefixes and ordinary metadata.
-const maxJsonStringLayers = 8;
+function maskField(
+  key: string,
+  value: unknown,
+  diagnosticCode: boolean,
+): unknown {
+  if (!sensitiveKey.test(key)) return value;
+  if (
+    diagnosticCode &&
+    key.toLowerCase() === "code" &&
+    typeof value === "string" &&
+    publicErrorCodes.has(value.toLowerCase())
+  )
+    return value;
+  return typeof value === "string" && /^https?:\/\//i.test(value)
+    ? safeUrl(value)
+    : "***";
+}
+
+// Quoted tokens are indivisible: field identity and its value stay together.
+// This same lexer handles JSON, shell-like assignments, queries and headers.
+const lexemePattern =
+  /https?:\/\/[^\s"'<>\\]+|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[@\w.-]+/gi;
+
+function decodeQuoted(value: string): string {
+  return value[0] === '"'
+    ? (JSON.parse(value) as string)
+    : value.slice(1, -1).replace(/\\(['\\])/g, "$1");
+}
+
+function encodeQuoted(value: string, quote: string): string {
+  if (quote === '"') return JSON.stringify(value);
+  return (
+    "'" +
+    value
+      .replace(/\\/g, "\\\\")
+      .replace(/'/g, "\\'")
+      .replace(/\r/g, "\\r")
+      .replace(/\n/g, "\\n") +
+    "'"
+  );
+}
+
+function readValue(text: string, start: number): string {
+  const tail = text.slice(start);
+  if (tail[0] === '"' || tail[0] === "'") {
+    const quoted = /^(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/.exec(tail);
+    // An incomplete literal consumes the remainder and fails closed.
+    return quoted?.[0] ?? tail;
+  }
+  // Read a compound scalar as one value, including scheme + quoted credential.
+  // Delimiters inside quotes do not terminate it; adjacent assignments do.
+  let offset = 0;
+  while (offset < tail.length) {
+    const rest = tail.slice(offset);
+    if (/^[\r\n,;&<>}\]]/.test(rest)) break;
+    if (
+      /^\s+(?:[@\w.-]+|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')\s*[:=]/.test(rest)
+    )
+      break;
+    if (rest[0] === '"' || rest[0] === "'") {
+      const quoted = /^(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/.exec(rest);
+      if (!quoted) return tail;
+      offset += quoted[0].length;
+    } else {
+      offset++;
+    }
+  }
+  return tail.slice(0, offset).trimEnd();
+}
 
 function redactString(value: string, depth = 0): string {
-  // Bound hostile nesting and fail closed instead of returning uninspected text.
   if (depth >= maxJsonStringLayers) return "***";
-
-  const fieldsMasked = value.replace(
-    sensitiveTextField,
-    (_match, prefix, quote, entry: string) =>
-      `${prefix}${quote}${/^https?:\/\//i.test(entry) ? safeUrl(entry) : "***"}${quote}`,
-  );
-  // Plain header matching must not consume the rest of an encoded JSON document.
-  return fieldsMasked
-    .split(/("(?:\\.|[^"\\])*")/g)
-    .map((part, index, parts) => {
-      if (index % 2 === 0) return redactPlainText(part);
-      // A quoted header value belongs to the preceding plain-text prefix.
-      // Mask just this literal, leaving adjacent JSON fields intact.
-      if (
-        /\b(?:Authorization|Proxy-Authorization)\s*:\s*$/i.test(
-          parts[index - 1],
-        )
-      ) {
-        return '"***"';
+  // A raw escaped fragment need not have its own surrounding JSON quotes.
+  // Decode one complete representation before lexing; preserve its escape level.
+  if (value.includes('\\"')) {
+    try {
+      const decoded = JSON.parse('"' + value + '"') as string;
+      if (decoded !== value) {
+        const redacted = redactString(decoded, depth + 1);
+        return redacted === decoded
+          ? value
+          : JSON.stringify(redacted).slice(1, -1);
       }
-      let decoded: string;
+    } catch {
+      /* Ordinary JSON literals are decoded individually below. */
+    }
+  }
+  const lexer = new RegExp(lexemePattern);
+  let result = "";
+  let end = 0;
+  let token: RegExpExecArray | null;
+  while ((token = lexer.exec(value)) !== null) {
+    const part = token[0];
+    const start = token.index;
+    result += value.slice(end, start);
+    if (/^https?:\/\//i.test(part)) {
+      result += redactUrl(part);
+      end = lexer.lastIndex;
+      continue;
+    }
+    const quoted = part[0] === '"' || part[0] === "'";
+    // Mixed malformed escape representations must never expose unparsed fragments.
+    if (quoted && value[start - 1] === "\\") return "***";
+    let decoded: string;
+    try {
+      decoded = quoted ? decodeQuoted(part) : part;
+    } catch {
+      return "***";
+    }
+    const separator = /^\s*[:=]\s*/.exec(value.slice(lexer.lastIndex));
+    if (separator && sensitiveKey.test(decoded)) {
+      const valueStart = lexer.lastIndex + separator[0].length;
+      const raw = readValue(value, valueStart);
+      const quote = raw[0] === '"' || raw[0] === "'" ? raw[0] : "";
+      let entry: string;
       try {
-        decoded = JSON.parse(part) as string;
+        entry = quote ? decodeQuoted(raw) : raw;
       } catch {
-        return "***";
+        entry = "***";
       }
-      const redacted = redactString(decoded, depth + 1);
-      return redacted === decoded ? part : JSON.stringify(redacted);
-    })
-    .join("");
+      const masked = maskField(
+        decoded,
+        entry,
+        separator[0].trim() === ":",
+      ) as string;
+      result +=
+        part + separator[0] + (quote ? encodeQuoted(masked, quote) : masked);
+      end = valueStart + raw.length;
+      lexer.lastIndex = end;
+      continue;
+    }
+    // A standalone bearer value has no field name but is still authentication data.
+    const bearer =
+      !quoted && /^bearer$/i.test(part)
+        ? /^[ \t]+[^\s"'<>\\,;]+/.exec(value.slice(lexer.lastIndex))
+        : null;
+    if (bearer) {
+      result += part + " ***";
+      end = lexer.lastIndex + bearer[0].length;
+      lexer.lastIndex = end;
+      continue;
+    }
+    const redacted = quoted
+      ? redactString(decoded, depth + 1)
+      : part.replace(jwt, "***");
+    result +=
+      redacted === decoded
+        ? part
+        : quoted
+          ? encodeQuoted(redacted, part[0])
+          : redacted;
+    end = lexer.lastIndex;
+  }
+  return result + value.slice(end);
 }
 
 export function redactSensitive(value: unknown): unknown {
   if (typeof value === "string") return redactString(value);
-  // Do not serialize HTTP client internals, which may contain request credentials.
-  if (value instanceof Error) {
+  // Never serialize HTTP client internals, which may contain request credentials.
+  if (value instanceof Error)
     return { name: value.name, message: redactString(value.message) };
-  }
   if (Array.isArray(value)) return value.map(redactSensitive);
   if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value).map(([key, entry]) => [
         key,
         sensitiveKey.test(key)
-          ? typeof entry === "string" && /^https?:\/\//i.test(entry)
-            ? safeUrl(entry)
-            : "***"
+          ? maskField(key, entry, true)
           : redactSensitive(entry),
       ]),
     );
@@ -107,11 +237,10 @@ export function redactSensitive(value: unknown): unknown {
   return value;
 }
 
-/** Covers both plain diagnostics and JSON text already serialized by a handler. */
+/** Covers plain diagnostics and JSON already serialized by a handler. */
 export function redactOutput(text: string): string {
   try {
-    const parsed: unknown = JSON.parse(text);
-    return JSON.stringify(redactSensitive(parsed), null, 2);
+    return JSON.stringify(redactSensitive(JSON.parse(text)), null, 2);
   } catch {
     return redactString(text);
   }
