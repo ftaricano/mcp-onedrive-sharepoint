@@ -13,6 +13,9 @@ and this project follows [Semantic Versioning](https://semver.org/).
   Signed URLs in output are diagnostic values and must not be reused for requests.
 - Apply the same token field pattern to objects and embedded JSON diagnostics,
   including `refresh_token` and `id_token`, while preserving Graph error codes.
+- Redact sensitive fields inside escaped JSON string literals in diagnostics,
+  errors and audit logs, including multiple serialization layers. Bound excessive
+  nesting with a masked value rather than returning uninspected text.
 
 ### Added
 

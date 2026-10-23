@@ -4,7 +4,8 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { redactOutput, redactSensitive } from "../utils/redaction.js";
 import { jsonTextResponse, toolErrorResponse } from "../graph/contracts.js";
-import { SecurityValidator } from "../utils/security-validator.js";
+import { AuditLogger, SecurityValidator } from "../utils/security-validator.js";
+import { createUserFriendlyError } from "../graph/error-handler.js";
 
 const canary = "fictional-sensitive-canary";
 const base = "https://contoso.sharepoint.com/documents/report.xlsx";
@@ -163,4 +164,137 @@ test("ods stderr masks sensitive command text before writing", () => {
     assert.ok(child.stderr.includes("***"));
     if (input.startsWith("https:")) assert.ok(child.stderr.includes(base));
   }
+});
+
+function escapedDiagnostic(
+  fields: Record<string, string>,
+  layers: number,
+): string {
+  let body = JSON.stringify(fields);
+  for (let layer = 0; layer < layers; layer++) {
+    body = JSON.stringify({ body });
+  }
+  return `diagnostic ${body}`;
+}
+
+for (const layers of [1, 2]) {
+  for (const key of [
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "Authorization",
+    "downloadUrl",
+    "@microsoft.graph.downloadUrl",
+    "tempauth",
+  ]) {
+    test(`redacts ${key} escaped in ${layers} JSON layers at every output boundary`, () => {
+      const diagnostic = escapedDiagnostic(
+        {
+          [key]: canary,
+          code: "InvalidAuthenticationToken",
+          name: "report.txt",
+        },
+        layers,
+      );
+      const error = new Error(diagnostic);
+      const envelope = jsonTextResponse({ diagnostic });
+      const outputs = [
+        redactOutput(diagnostic),
+        JSON.stringify(redactSensitive({ diagnostic })),
+        envelope.content[0].text,
+        redactOutput(envelope.content[0].text),
+        JSON.stringify(redactSensitive(error)),
+        JSON.stringify(toolErrorResponse("upload_file", error)),
+        createUserFriendlyError(error),
+        SecurityValidator.sanitizeForLogging(diagnostic),
+        SecurityValidator.sanitizeForLogging({ diagnostic }),
+      ];
+      for (const output of outputs) {
+        assert.ok(!output.includes(canary));
+        assert.ok(output.includes("***"));
+        assert.ok(output.includes("InvalidAuthenticationToken"));
+        assert.ok(output.includes("report.txt"));
+      }
+      // Every wrapper remains valid JSON with the original number of layers.
+      let decoded = redactOutput(diagnostic).slice("diagnostic ".length);
+      for (let layer = 0; layer < layers; layer++)
+        decoded = JSON.parse(decoded).body;
+      assert.equal(JSON.parse(decoded)[key], "***");
+      assert.ok(diagnostic.includes(canary));
+    });
+  }
+
+  for (const [label, value] of [
+    ["bearer", `Bearer ${canary}==`],
+    ["header", `Authorization: Basic ${canary}`],
+    ["signed-url", `${base}?sig=${canary}`],
+  ]) {
+    test(`redacts escaped ${label} in ${layers} JSON layers and actual audit logs`, (t) => {
+      const diagnostic = escapedDiagnostic(
+        { message: value, code: "NotFound" },
+        layers,
+      );
+      const consoleLog = t.mock.method(console, "log", () => {});
+      AuditLogger.log("upload", "fictional-user", diagnostic, "failure", {
+        diagnostic,
+      });
+      const outputs = [
+        redactOutput(diagnostic),
+        JSON.stringify(toolErrorResponse("upload_file", new Error(diagnostic))),
+        JSON.stringify(AuditLogger.getRecentLogs(1)),
+        JSON.stringify(consoleLog.mock.calls),
+      ];
+      for (const output of outputs) {
+        assert.ok(!output.includes(canary));
+        assert.ok(output.includes("NotFound"));
+      }
+      let decoded = redactOutput(diagnostic).slice("diagnostic ".length);
+      for (let layer = 0; layer < layers; layer++)
+        decoded = JSON.parse(decoded).body;
+      assert.equal(JSON.parse(decoded).code, "NotFound");
+      if (label === "signed-url") {
+        assert.ok(redactOutput(diagnostic).includes(base));
+      }
+    });
+  }
+
+  test(`ods stderr redacts diagnostics with ${layers} escaped JSON layers`, () => {
+    const diagnostic = escapedDiagnostic(
+      { refresh_token: canary, id_token: canary },
+      layers,
+    );
+    const child = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL("../cli.js", import.meta.url)), diagnostic],
+      {
+        encoding: "utf8",
+        env: { MCP_TOOL_PROFILE: "core" },
+      },
+    );
+    assert.equal(child.status, 1);
+    assert.equal(child.stdout, "");
+    assert.ok(!child.stderr.includes(canary));
+    assert.ok(child.stderr.includes("***"));
+  });
+}
+
+test("ordinary escaped JSON metadata is preserved verbatim", () => {
+  const diagnostic = escapedDiagnostic(
+    {
+      name: "report.txt",
+      code: "InvalidAuthenticationToken",
+      eTag: '"version-1"',
+      cTag: '"content-1"',
+    },
+    2,
+  );
+  assert.equal(redactOutput(diagnostic), diagnostic);
+});
+
+test("excessive escaped nesting fails closed", () => {
+  assert.ok(
+    !redactOutput(escapedDiagnostic({ refresh_token: canary }, 10)).includes(
+      canary,
+    ),
+  );
 });

@@ -30,13 +30,8 @@ function safeUrl(value: string): string {
   }
 }
 
-function redactString(value: string): string {
+function redactPlainText(value: string): string {
   return value
-    .replace(
-      sensitiveTextField,
-      (_match, prefix, quote, entry: string) =>
-        `${prefix}${quote}${/^https?:\/\//i.test(entry) ? safeUrl(entry) : "***"}${quote}`,
-    )
     .replace(/https?:\/\/[^\s"'<>\\]+/gi, (url) =>
       isSignedUrl(url) ? safeUrl(url) : url,
     )
@@ -49,6 +44,36 @@ function redactString(value: string): string {
       /\b(tempauth|sig|se|[\w-]*token[\w-]*|code)\s*=\s*[^\s&"'<>\\,;]+/gi,
       "$1=***",
     );
+}
+
+// Decode JSON string literals inside diagnostics before matching sensitive fields.
+// Re-encode only changed literals, preserving prefixes and ordinary metadata.
+const maxJsonStringLayers = 8;
+
+function redactString(value: string, depth = 0): string {
+  // Bound hostile nesting and fail closed instead of returning uninspected text.
+  if (depth >= maxJsonStringLayers) return "***";
+
+  const fieldsMasked = value.replace(
+    sensitiveTextField,
+    (_match, prefix, quote, entry: string) =>
+      `${prefix}${quote}${/^https?:\/\//i.test(entry) ? safeUrl(entry) : "***"}${quote}`,
+  );
+  // Plain header matching must not consume the rest of an encoded JSON document.
+  return fieldsMasked
+    .split(/("(?:\\.|[^"\\])*")/g)
+    .map((part, index) => {
+      if (index % 2 === 0) return redactPlainText(part);
+      let decoded: string;
+      try {
+        decoded = JSON.parse(part) as string;
+      } catch {
+        return "***";
+      }
+      const redacted = redactString(decoded, depth + 1);
+      return redacted === decoded ? part : JSON.stringify(redacted);
+    })
+    .join("");
 }
 
 export function redactSensitive(value: unknown): unknown {
