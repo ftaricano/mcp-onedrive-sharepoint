@@ -6,6 +6,18 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- Mask signed download URLs, authentication query values and authorization headers
+  in tool responses, CLI output and diagnostics; retain URL host and path only.
+  Signed URLs in output are diagnostic values and must not be reused for requests.
+
+### Added
+
+- Upload and download results expose `file.eTag` and `file.cTag` (null when absent).
+  Downloads read metadata first and send `If-Match` when an eTag is available.
+  Version tags identify the remote item; they are not a local content checksum.
+
 ### Changed
 
 - Upgrade MSAL Node to 7.0.0 and require Node.js 20 or newer.

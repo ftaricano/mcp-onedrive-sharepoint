@@ -1,3 +1,4 @@
+import { redactSensitive, redactOutput } from "../utils/redaction.js";
 import { GraphResponse } from "./models.js";
 import { GraphApiError, createUserFriendlyError } from "./error-handler.js";
 
@@ -71,7 +72,7 @@ export function jsonTextResponse(payload: unknown): {
     content: [
       {
         type: "text",
-        text: JSON.stringify(payload, null, 2),
+        text: JSON.stringify(redactSensitive(payload), null, 2),
       },
     ],
   };
@@ -97,7 +98,7 @@ export function toolErrorResponse(
 } {
   const suffix = context ? ` (${context})` : "";
   const friendly = createUserFriendlyError(error, context);
-  const summary = `Error in ${toolName}${suffix}: ${friendly}`;
+  const summary = redactOutput(`Error in ${toolName}${suffix}: ${friendly}`);
 
   const graphError =
     error instanceof GraphApiError ? error : new GraphApiError(error, context);
@@ -119,7 +120,7 @@ export function toolErrorResponse(
   return {
     content: [
       { type: "text", text: summary },
-      { type: "text", text: JSON.stringify(payload, null, 2) },
+      { type: "text", text: JSON.stringify(redactSensitive(payload), null, 2) },
     ],
     isError: true,
   };

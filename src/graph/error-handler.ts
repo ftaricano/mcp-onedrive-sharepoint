@@ -1,3 +1,4 @@
+import { redactOutput } from "../utils/redaction.js";
 /**
  * Enhanced error handling for Microsoft Graph API
  * Business-aware error categorization and user-friendly messaging
@@ -28,7 +29,7 @@ export class GraphApiError extends Error {
     const source = axiosLike?.payload ?? error;
 
     const message = GraphApiError.extractMessage(source);
-    super(message);
+    super(redactOutput(message));
 
     this.name = "GraphApiError";
     this.code = GraphApiError.extractCode(source, axiosLike?.networkCode);
@@ -492,5 +493,5 @@ export function createUserFriendlyError(error: any, context?: string): string {
     message += `\n\nSuggested Action: ${graphError.suggestedAction}`;
   }
 
-  return message;
+  return redactOutput(message);
 }
