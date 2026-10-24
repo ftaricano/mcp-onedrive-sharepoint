@@ -1,4 +1,4 @@
-import { redactOutput } from "../utils/redaction.js";
+import { redactDiagnostic as redactOutput } from "../utils/redaction.js";
 import { loadConfig } from "../config/index.js";
 import {
   getAuthInstance,

@@ -1,4 +1,4 @@
-import { redactOutput, redactSensitive } from "./redaction.js";
+import { redactDiagnostic } from "./redaction.js";
 /**
  * Security validation utilities for file paths and inputs
  * Prevents path traversal, injection attacks, and validates inputs
@@ -333,11 +333,7 @@ export class SecurityValidator {
       return "null";
     }
 
-    let str = redactOutput(
-      typeof input === "string"
-        ? input
-        : JSON.stringify(redactSensitive(input)),
-    );
+    let str = redactDiagnostic(input);
 
     // Remove potential secrets
     str = str.replace(

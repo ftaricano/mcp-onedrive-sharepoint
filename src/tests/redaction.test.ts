@@ -442,9 +442,14 @@ for (const field of matrixKeys) {
             SecurityValidator.sanitizeForLogging(diagnostic),
             SecurityValidator.sanitizeForLogging({ diagnostic }),
           ];
-          for (const output of outputs) {
+          for (const [boundary, output] of outputs.entries()) {
             assert.ok(!output.includes(canary));
-            assert.ok(output.includes("***"));
+            const legacyJson =
+              boundary === 5 &&
+              syntax === "json" &&
+              representation === "plain" &&
+              /^(password|token|authorization)$/i.test(key);
+            assert.ok(output.includes(legacyJson ? "[REDACTED]" : "***"));
           }
           const parsed = JSON.parse(envelope.content[0].text);
           assert.equal(parsed.eTag, '"v1"');
@@ -471,7 +476,15 @@ for (const layers of [0, 1, 2]) {
     assert.deepEqual(output, fields);
   });
   test(`JWT and unknown SharePoint signing key through ${layers} layers`, () => {
-    const fictionalJwt = "ZmFrZS1oZWFkZXI.ZmFrZS1wYXlsb2Fk.ZmFrZS1zaWduYXR1cmU";
+    const fictionalJwt = [
+      Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString(
+        "base64url",
+      ),
+      Buffer.from(JSON.stringify({ sub: "fictional-test" })).toString(
+        "base64url",
+      ),
+      Buffer.from(["fictional", "signature"].join("-")).toString("base64url"),
+    ].join(".");
     for (const input of [
       fictionalJwt,
       `unrecognized=${fictionalJwt}`,
@@ -682,10 +695,16 @@ for (const header of authenticationHeaders) {
             JSON.stringify(AuditLogger.getRecentLogs(1)),
             JSON.stringify(consoleLog.mock.calls),
           ];
-          for (const output of outputs) {
+          for (const [boundary, output] of outputs.entries()) {
             for (const sentinel of parameterCanaries)
               assert.ok(!output.includes(sentinel));
-            assert.ok(output.includes(`${scheme} ***`));
+            const legacyJson =
+              [5, 8].includes(boundary) &&
+              format === "json-field" &&
+              /^authorization$/i.test(key);
+            assert.ok(
+              output.includes(legacyJson ? "[REDACTED]" : `${scheme} ***`),
+            );
             for (const parameter of [
               "username=",
               "response=",
@@ -1358,4 +1377,145 @@ test("pagination exceptions never release other token fields or signed URLs", ()
       `https://example.com/file?X-Amz-Signature=${canary}`,
     ).includes(canary),
   );
+});
+
+// Round 13: functional identifiers and cursors have separate diagnostic policies.
+test("round 13 SharePoint IDs survive MCP and CLI while a JOSE JWT is masked", () => {
+  const ids = {
+    siteId: `example.sharepoint.com,${"0".repeat(8)}-0000-0000-0000-000000000001,11111111-1111-1111-1111-111111111111`,
+    driveId: "b!" + "FICTIONAL".repeat(4),
+    itemId: "01" + "FICTIONAL".repeat(3),
+    listId: "00000000-0000-0000-0000-000000000001",
+  };
+  for (const output of [
+    jsonTextResponse(ids).content[0].text,
+    redactOutput(jsonTextResponse(ids).content[0].text),
+  ])
+    assert.deepEqual(JSON.parse(output), ids);
+  const jwt = [
+    JSON.stringify({ alg: "HS256" }),
+    JSON.stringify({ sub: "fictional" }),
+    ["fictional", "signature"].join("-"),
+  ]
+    .map((part) => Buffer.from(part).toString("base64url"))
+    .join(".");
+  for (const key of ["siteId", "driveId", "itemId", "message"]) {
+    const output = redactOutput(
+      jsonTextResponse({ [key]: jwt }).content[0].text,
+    );
+    assert.ok(!output.includes(jwt));
+    assert.equal(JSON.parse(output)[key], "***");
+  }
+});
+
+for (const field of paginationFieldNames) {
+  for (const parameter of ["$skiptoken", "$deltatoken", "$searchtoken"]) {
+    for (const key of [
+      "client_secret",
+      "password",
+      "access_token",
+      "refresh_token",
+      "id_token",
+      "sig",
+      "code",
+      "key",
+      "api_key",
+      "X-Amz-Signature",
+      "Authorization",
+    ]) {
+      for (const separator of ["=", ":"]) {
+        test(`round 13 private cursor ${field} / ${parameter} / ${key} / ${separator}`, () => {
+          const sentinel = ["FICTIONAL", "TEST", "VALUE"].join("_");
+          for (const representation of representations) {
+            const [, layers, raw] = representation;
+            const embedded = encodeDiagnostic(
+              JSON.stringify({ [key]: sentinel }),
+              layers,
+              raw,
+            );
+            for (const production of [
+              `${key}${separator}${sentinel}`,
+              embedded,
+            ]) {
+              for (const encodings of [1, 2]) {
+                let encoded = production;
+                for (let i = 0; i < encodings; i++)
+                  encoded = encodeURIComponent(encoded);
+                const cursor = `https://graph.microsoft.com/v1.0/me/drive/root/children?$skip=1&${parameter}=${encoded}`;
+                const input = {
+                  [field]: cursor,
+                  eTag: '"v1"',
+                  code: "NotFound",
+                };
+                const mcp = jsonTextResponse(input).content[0].text;
+                for (const output of [
+                  mcp,
+                  redactOutput(mcp),
+                  redactOutput(`diagnostic ${JSON.stringify(input)}`),
+                  SecurityValidator.sanitizeForLogging(input),
+                  JSON.stringify(
+                    toolErrorResponse(
+                      "list_files",
+                      new Error(JSON.stringify(input)),
+                    ),
+                  ),
+                ]) {
+                  assert.ok(!output.includes(sentinel));
+                  assert.ok(!output.includes(encoded));
+                  assert.ok(output.includes("NotFound"));
+                }
+              }
+            }
+          }
+        });
+      }
+    }
+  }
+  test(`round 13 cursor omitted from log and error ${field}`, (t) => {
+    const cursor =
+      "https://graph.microsoft.com/v1.0/me/drive/root/children?$skiptoken=" +
+      ["fictional", "cursor"].join("-");
+    const input = { [field]: cursor };
+    assert.equal(
+      JSON.parse(redactOutput(jsonTextResponse(input).content[0].text))[field],
+      cursor,
+    );
+    const log = t.mock.method(console, "log", () => {});
+    AuditLogger.log("list", "fictional-user", cursor, "failure", input);
+    for (const message of [
+      cursor,
+      JSON.stringify(input),
+      encodeDiagnostic(JSON.stringify(input), 2, true),
+    ]) {
+      for (const output of [
+        SecurityValidator.sanitizeForLogging(message),
+        SecurityValidator.sanitizeForLogging(input),
+        createUserFriendlyError(new Error(message)),
+        JSON.stringify(toolErrorResponse("list_files", new Error(message))),
+        JSON.stringify(redactSensitive(new Error(message))),
+        JSON.stringify(AuditLogger.getRecentLogs(1)),
+        JSON.stringify(log.mock.calls),
+      ]) {
+        assert.ok(!output.includes(cursor));
+        assert.ok(!output.includes(["fictional", "cursor"].join("-")));
+      }
+    }
+  });
+}
+
+test("round 13 CLI stderr omits continuation cursors before bootstrap", () => {
+  const cursor =
+    "https://graph.microsoft.com/v1.0/me/drive/root/children?$skiptoken=" +
+    ["fictional", "cursor"].join("-");
+  const cli = fileURLToPath(new URL("../cli.js", import.meta.url));
+  for (const argument of [cursor, JSON.stringify({ nextPageToken: cursor })]) {
+    const child = spawnSync(process.execPath, [cli, argument], {
+      encoding: "utf8",
+      env: { PATH: process.env.PATH, MCP_TOOL_PROFILE: "core" },
+    });
+    assert.equal(child.status, 1);
+    assert.ok(!child.stderr.includes(cursor));
+    assert.ok(!child.stderr.includes(["fictional", "cursor"].join("-")));
+    assert.ok(child.stderr.includes("Unknown tool"));
+  }
 });

@@ -6,6 +6,8 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Preserve SharePoint identifiers by recognizing JOSE JWT headers; validate embedded cursor credentials and omit continuation URLs from diagnostics while preserving MCP/CLI pagination.
+
 ### Security
 
 - Preserve validated Graph pagination and delta cursors in known protocol fields

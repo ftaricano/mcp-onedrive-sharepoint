@@ -1,6 +1,6 @@
 import {
   redactSensitive,
-  redactOutput,
+  redactDiagnostic,
   isSafeGraphPaginationUrl,
 } from "../utils/redaction.js";
 import { GraphResponse } from "./models.js";
@@ -115,7 +115,9 @@ export function toolErrorResponse(
 } {
   const suffix = context ? ` (${context})` : "";
   const friendly = createUserFriendlyError(error, context);
-  const summary = redactOutput(`Error in ${toolName}${suffix}: ${friendly}`);
+  const summary = redactDiagnostic(
+    `Error in ${toolName}${suffix}: ${friendly}`,
+  );
 
   const graphError =
     error instanceof GraphApiError ? error : new GraphApiError(error, context);
@@ -137,7 +139,10 @@ export function toolErrorResponse(
   return {
     content: [
       { type: "text", text: summary },
-      { type: "text", text: JSON.stringify(redactSensitive(payload), null, 2) },
+      {
+        type: "text",
+        text: JSON.stringify(redactSensitive(payload, false), null, 2),
+      },
     ],
     isError: true,
   };

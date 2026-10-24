@@ -1,7 +1,7 @@
 /** Redact credentials in output; preserve only validated operational cursors. */
 // One field policy for structured objects and all textual assignment syntaxes.
 const sensitiveKey =
-  /^(?:[\w-]*token[\w-]*|client_secret|password|sig|se|code|tempauth|(?:@microsoft\.graph\.)?downloadurl|(?:proxy-)?authorization|www-authenticate)$/i;
+  /^(?:[\w-]*token[\w-]*|client_secret|password|secret|api_key|signature|x-amz-[\w-]+|x-ms-[\w-]+|sig|se|code|tempauth|(?:@microsoft\.graph\.)?downloadurl|(?:proxy-)?authorization|www-authenticate)$/i;
 const authenticationHeader = /^(?:(?:proxy-)?authorization|www-authenticate)$/i;
 // Exact protocol fields only: token-shaped names are otherwise still private.
 const paginationFields = new Set([
@@ -66,18 +66,26 @@ export function isSafeGraphPaginationUrl(
         signedQueryKey.test(key)
       )
         return false;
-      // OData options cannot smuggle credential productions or signed URLs.
-      if (
-        authenticationCredential.test(entry) ||
-        (!["$skiptoken", "$deltatoken", "$searchtoken"].includes(
+      // Inspect opaque cursor contents with the SAME field/header lexer, including
+      // nested JSON, escapes and percent encoding. Only bare opaque JWT-shaped
+      // cursors are exempt from JWT detection; assignments never are.
+      let decoded = entry;
+      for (let layer = 0; layer < maxJsonStringLayers; layer++) {
+        const opaque = ["$skiptoken", "$deltatoken", "$searchtoken"].includes(
           key.toLowerCase(),
-        ) &&
-          redactString(entry) !== entry) ||
-        /(?:access_token|refresh_token|id_token|sig|tempauth|x-amz-signature)\s*=/i.test(
-          entry,
-        )
-      )
-        return false;
+        );
+        if (redactString(decoded, 0, true, !opaque, true) !== decoded)
+          return false;
+        let next: string;
+        try {
+          next = decodeURIComponent(decoded);
+        } catch {
+          return false;
+        }
+        if (next === decoded) break;
+        if (layer === maxJsonStringLayers - 1) return false;
+        decoded = next;
+      }
     }
     if (requestEndpoint) {
       const request = new URL(
@@ -121,20 +129,45 @@ Request_ResourceNotFound Authorization_RequestDenied invalid_client invalid_gran
 );
 const jwt =
   /(?<![\w.-])[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?![\w.-])/g;
+// A compact JWT starts with a JOSE object, not an arbitrary dotted ID/hostname.
+function maskJwt(candidate: string): string {
+  try {
+    const header = JSON.parse(
+      Buffer.from(candidate.split(".")[0], "base64url").toString("utf8"),
+    );
+    return header &&
+      typeof header === "object" &&
+      !Array.isArray(header) &&
+      typeof header.alg === "string"
+      ? "***"
+      : candidate;
+  } catch {
+    return candidate;
+  }
+}
 const maxJsonStringLayers = 8;
 
 function safeUrl(value: string): string {
   try {
     const url = new URL(value);
-    return `${url.protocol}//${url.host}${url.pathname.replace(jwt, "***")}?***`;
+    return `${url.protocol}//${url.host}${url.pathname.replace(jwt, maskJwt)}?***`;
   } catch {
     return "***";
   }
 }
 
-function redactUrl(value: string): string {
+function redactUrl(value: string, preservePagination = true): string {
   try {
     const url = new URL(value);
+    // Logs/errors omit even malformed or credential-bearing continuation URLs.
+    if (
+      !preservePagination &&
+      url.hostname === "graph.microsoft.com" &&
+      [...url.searchParams.keys()].some((key) =>
+        paginationQueryKeys.has(key.toLowerCase()),
+      )
+    )
+      return safeUrl(value);
     // Unknown SharePoint signing parameters are private too: redact its whole query.
     const sharepointQuery =
       /(?:^|\.)sharepoint(?:-df|-mil)?\.(?:com|us|de|cn)$/i.test(
@@ -145,14 +178,14 @@ function redactUrl(value: string): string {
       ([key, entry]) =>
         sensitiveKey.test(key) ||
         signedQueryKey.test(key) ||
-        entry.match(jwt) !== null,
+        entry.replace(jwt, maskJwt) !== entry,
     );
     if (sharepointQuery || signed) return safeUrl(value);
     // Keep the URL authority readable; a hostname is not a JWT.
     return value.replace(
       /^(https?:\/\/[^/?#]+)(.*)$/i,
       (_match, authority: string, rest: string) =>
-        authority + rest.replace(jwt, "***"),
+        authority + rest.replace(jwt, maskJwt),
     );
   } catch {
     return "***";
@@ -164,7 +197,7 @@ function maskAuthenticationHeader(value: unknown): string {
   // The first HTTP token is the scheme; every parameter/credential is private.
   // A lone opaque value has no independently identifiable scheme: fail closed.
   const scheme = /^([!#$%&'*+.^_`|~0-9A-Za-z-]+)[ \t]+\S/.exec(value.trim());
-  return scheme ? `${scheme[1].replace(jwt, "***")} ***` : "***";
+  return scheme ? `${scheme[1].replace(jwt, maskJwt)} ***` : "***";
 }
 
 function readAuthenticationHeader(
@@ -184,9 +217,10 @@ function maskField(
   key: string,
   value: unknown,
   diagnosticCode: boolean,
+  preservePagination = true,
 ): unknown {
   if (paginationFields.has(key)) {
-    if (isSafeGraphPaginationUrl(value)) return value;
+    if (preservePagination && isSafeGraphPaginationUrl(value)) return value;
     return typeof value === "string" && /^https?:\/\//i.test(value)
       ? safeUrl(value)
       : "***";
@@ -287,10 +321,6 @@ export const authenticationSchemeCatalog = Object.freeze([
 const standaloneSchemes = new Set(
   authenticationSchemeCatalog.map((scheme) => scheme.toLowerCase()),
 );
-const authenticationCredential = new RegExp(
-  `(?:^|[^\\w.-])(?:${authenticationSchemeCatalog.join("|")})[ \t]+\\S`,
-  "i",
-);
 
 /** Consume the credential atomically, then resume at the diagnostic suffix. */
 function standaloneAuthenticationEnd(
@@ -317,7 +347,13 @@ function standaloneAuthenticationEnd(
   return opaque ? valueStart + opaque[0].length : null;
 }
 
-function redactString(value: string, depth = 0): string {
+function redactString(
+  value: string,
+  depth = 0,
+  preservePagination = true,
+  inspectJwt = true,
+  inspectCursor = false,
+): string {
   if (depth >= maxJsonStringLayers) return "***";
   // A raw escaped fragment need not have its own surrounding JSON quotes.
   // Decode one complete representation before lexing; preserve its escape level.
@@ -325,7 +361,13 @@ function redactString(value: string, depth = 0): string {
     try {
       const decoded = JSON.parse('"' + value + '"') as string;
       if (decoded !== value) {
-        const redacted = redactString(decoded, depth + 1);
+        const redacted = redactString(
+          decoded,
+          depth + 1,
+          preservePagination,
+          inspectJwt,
+          inspectCursor,
+        );
         return redacted === decoded
           ? value
           : JSON.stringify(redacted).slice(1, -1);
@@ -343,7 +385,7 @@ function redactString(value: string, depth = 0): string {
     const start = token.index;
     result += value.slice(end, start);
     if (/^https?:\/\//i.test(part)) {
-      result += redactUrl(part);
+      result += redactUrl(part, preservePagination);
       end = lexer.lastIndex;
       continue;
     }
@@ -359,7 +401,10 @@ function redactString(value: string, depth = 0): string {
     const separator = /^\s*[:=]\s*/.exec(value.slice(lexer.lastIndex));
     if (
       separator &&
-      (sensitiveKey.test(decoded) || paginationFields.has(decoded))
+      (sensitiveKey.test(decoded) ||
+        paginationFields.has(decoded) ||
+        (inspectCursor &&
+          (decoded.toLowerCase() === "key" || signedQueryKey.test(decoded))))
     ) {
       const valueStart = lexer.lastIndex + separator[0].length;
       // A pagination URL is one value, including every query parameter. Never
@@ -383,11 +428,16 @@ function redactString(value: string, depth = 0): string {
       } catch {
         entry = "***";
       }
-      const masked = maskField(
-        decoded,
-        entry,
-        separator[0].trim() === ":",
-      ) as string;
+      const masked =
+        inspectCursor &&
+        (decoded.toLowerCase() === "key" || signedQueryKey.test(decoded))
+          ? "***"
+          : (maskField(
+              decoded,
+              entry,
+              separator[0].trim() === ":",
+              preservePagination,
+            ) as string);
       result +=
         part + separator[0] + (quote ? encodeQuoted(masked, quote) : masked);
       end = valueStart + raw.length;
@@ -408,8 +458,16 @@ function redactString(value: string, depth = 0): string {
       continue;
     }
     const redacted = quoted
-      ? redactString(decoded, depth + 1)
-      : part.replace(jwt, "***");
+      ? redactString(
+          decoded,
+          depth + 1,
+          preservePagination,
+          inspectJwt,
+          inspectCursor,
+        )
+      : inspectJwt
+        ? part.replace(jwt, maskJwt)
+        : part;
     result +=
       redacted === decoded
         ? part
@@ -421,19 +479,24 @@ function redactString(value: string, depth = 0): string {
   return result + value.slice(end);
 }
 
-export function redactSensitive(value: unknown): unknown {
-  if (typeof value === "string") return redactString(value);
+export function redactSensitive(
+  value: unknown,
+  preservePagination = true,
+): unknown {
+  if (typeof value === "string")
+    return redactString(value, 0, preservePagination);
   // Never serialize HTTP client internals, which may contain request credentials.
   if (value instanceof Error)
-    return { name: value.name, message: redactString(value.message) };
-  if (Array.isArray(value)) return value.map(redactSensitive);
+    return { name: value.name, message: redactString(value.message, 0, false) };
+  if (Array.isArray(value))
+    return value.map((entry) => redactSensitive(entry, preservePagination));
   if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value).map(([key, entry]) => [
         key,
         sensitiveKey.test(key) || paginationFields.has(key)
-          ? maskField(key, entry, true)
-          : redactSensitive(entry),
+          ? maskField(key, entry, true, preservePagination)
+          : redactSensitive(entry, preservePagination),
       ]),
     );
   }
@@ -441,10 +504,21 @@ export function redactSensitive(value: unknown): unknown {
 }
 
 /** Covers plain diagnostics and JSON already serialized by a handler. */
-export function redactOutput(text: string): string {
+export function redactOutput(text: string, preservePagination = true): string {
   try {
-    return JSON.stringify(redactSensitive(JSON.parse(text)), null, 2);
+    return JSON.stringify(
+      redactSensitive(JSON.parse(text), preservePagination),
+      null,
+      2,
+    );
   } catch {
-    return redactString(text);
+    return redactString(text, 0, preservePagination);
   }
+}
+
+/** Diagnostic sinks must never publish operational continuation URLs. */
+export function redactDiagnostic(value: unknown): string {
+  return typeof value === "string"
+    ? redactOutput(value, false)
+    : JSON.stringify(redactSensitive(value, false));
 }
