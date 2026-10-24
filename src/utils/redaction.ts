@@ -1,8 +1,101 @@
-/** Redact output only; never pass these values back into Graph requests. */
+/** Redact credentials in output; preserve only validated operational cursors. */
 // One field policy for structured objects and all textual assignment syntaxes.
 const sensitiveKey =
   /^(?:[\w-]*token[\w-]*|client_secret|password|sig|se|code|tempauth|(?:@microsoft\.graph\.)?downloadurl|(?:proxy-)?authorization|www-authenticate)$/i;
 const authenticationHeader = /^(?:(?:proxy-)?authorization|www-authenticate)$/i;
+// Exact protocol fields only: token-shaped names are otherwise still private.
+const paginationFields = new Set([
+  "nextPageToken",
+  "@odata.nextLink",
+  "@odata.deltaLink",
+]);
+const paginationQueryKeys = new Set([
+  "$skiptoken",
+  "$deltatoken",
+  "$skip",
+  "$top",
+  "$select",
+  "$expand",
+  "$filter",
+  "$orderby",
+  "$count",
+  "$search",
+  "$format",
+  "$searchtoken",
+]);
+const signedQueryKey =
+  /^(?:x-amz-.+|x-ms-.+|sig|signature|tempauth|sv|se|sp|sr|st|skt|ske|sks|skv|skoid|sktid)$/i;
+
+/** Validate an operational cursor, optionally binding it to its request path. */
+export function isSafeGraphPaginationUrl(
+  value: unknown,
+  requestEndpoint?: string,
+): value is string {
+  if (
+    typeof value !== "string" ||
+    !/^https:\/\//i.test(value) ||
+    /[\s\\]/.test(value)
+  )
+    return false;
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" ||
+      url.hostname !== "graph.microsoft.com" ||
+      url.port ||
+      url.username ||
+      url.password ||
+      url.hash ||
+      !/^\/(?:v1\.0|beta)\/(?:me\/drive|users\/[^/]+\/drive|drives\/[^/]+|sites)(?:\/|$)/.test(
+        url.pathname,
+      )
+    )
+      return false;
+    const entries = [...url.searchParams];
+    if (
+      !entries.some(
+        ([key, entry]) =>
+          ["$skiptoken", "$deltatoken", "$skip"].includes(key.toLowerCase()) &&
+          entry !== "",
+      )
+    )
+      return false;
+    for (const [key, entry] of entries) {
+      if (
+        !paginationQueryKeys.has(key.toLowerCase()) ||
+        signedQueryKey.test(key)
+      )
+        return false;
+      // OData options cannot smuggle credential productions or signed URLs.
+      if (
+        authenticationCredential.test(entry) ||
+        (!["$skiptoken", "$deltatoken", "$searchtoken"].includes(
+          key.toLowerCase(),
+        ) &&
+          redactString(entry) !== entry) ||
+        /(?:access_token|refresh_token|id_token|sig|tempauth|x-amz-signature)\s*=/i.test(
+          entry,
+        )
+      )
+        return false;
+    }
+    if (requestEndpoint) {
+      const request = new URL(
+        requestEndpoint.startsWith("/") && !requestEndpoint.startsWith("//")
+          ? /^\/(?:v1\.0|beta)\//.test(requestEndpoint)
+            ? requestEndpoint
+            : `/v1.0${requestEndpoint}`
+          : requestEndpoint,
+        "https://graph.microsoft.com",
+      );
+      if (request.origin !== url.origin || request.pathname !== url.pathname)
+        return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 // Only known diagnostic codes are public. An arbitrary value in "code" is secret.
 // Query parameters and = assignments never use this exception.
 const publicErrorCodes = new Set(
@@ -49,7 +142,10 @@ function redactUrl(value: string): string {
       ) &&
       (url.search !== "" || url.hash !== "");
     const signed = [...url.searchParams].some(
-      ([key, entry]) => sensitiveKey.test(key) || entry.match(jwt) !== null,
+      ([key, entry]) =>
+        sensitiveKey.test(key) ||
+        signedQueryKey.test(key) ||
+        entry.match(jwt) !== null,
     );
     if (sharepointQuery || signed) return safeUrl(value);
     // Keep the URL authority readable; a hostname is not a JWT.
@@ -89,6 +185,12 @@ function maskField(
   value: unknown,
   diagnosticCode: boolean,
 ): unknown {
+  if (paginationFields.has(key)) {
+    if (isSafeGraphPaginationUrl(value)) return value;
+    return typeof value === "string" && /^https?:\/\//i.test(value)
+      ? safeUrl(value)
+      : "***";
+  }
   if (!sensitiveKey.test(key)) return value;
   if (authenticationHeader.test(key)) return maskAuthenticationHeader(value);
   if (
@@ -185,6 +287,10 @@ export const authenticationSchemeCatalog = Object.freeze([
 const standaloneSchemes = new Set(
   authenticationSchemeCatalog.map((scheme) => scheme.toLowerCase()),
 );
+const authenticationCredential = new RegExp(
+  `(?:^|[^\\w.-])(?:${authenticationSchemeCatalog.join("|")})[ \t]+\\S`,
+  "i",
+);
 
 /** Consume the credential atomically, then resume at the diagnostic suffix. */
 function standaloneAuthenticationEnd(
@@ -251,15 +357,25 @@ function redactString(value: string, depth = 0): string {
       return "***";
     }
     const separator = /^\s*[:=]\s*/.exec(value.slice(lexer.lastIndex));
-    if (separator && sensitiveKey.test(decoded)) {
+    if (
+      separator &&
+      (sensitiveKey.test(decoded) || paginationFields.has(decoded))
+    ) {
       const valueStart = lexer.lastIndex + separator[0].length;
-      const raw = authenticationHeader.test(decoded)
-        ? readAuthenticationHeader(
-            value,
-            valueStart,
-            quoted || /[\[{,]\s*$/.test(value.slice(0, start)),
-          )
-        : readValue(value, valueStart);
+      // A pagination URL is one value, including every query parameter. Never
+      // validate just a prefix before &, leaving a credential-bearing suffix.
+      const paginationUrl = paginationFields.has(decoded)
+        ? /^https?:\/\/[^\s"'<>\\,;}\]]+/.exec(value.slice(valueStart))?.[0]
+        : undefined;
+      const raw =
+        paginationUrl ??
+        (authenticationHeader.test(decoded)
+          ? readAuthenticationHeader(
+              value,
+              valueStart,
+              quoted || /[\[{,]\s*$/.test(value.slice(0, start)),
+            )
+          : readValue(value, valueStart));
       const quote = raw[0] === '"' || raw[0] === "'" ? raw[0] : "";
       let entry: string;
       try {
@@ -315,7 +431,7 @@ export function redactSensitive(value: unknown): unknown {
     return Object.fromEntries(
       Object.entries(value).map(([key, entry]) => [
         key,
-        sensitiveKey.test(key)
+        sensitiveKey.test(key) || paginationFields.has(key)
           ? maskField(key, entry, true)
           : redactSensitive(entry),
       ]),

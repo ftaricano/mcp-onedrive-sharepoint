@@ -8,6 +8,10 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- Preserve validated Graph pagination and delta cursors in known protocol fields
+  through MCP and CLI redaction. Reject credential-bearing queries and bind
+  paginated handler continuations to the requested collection path.
+
 - Redact registered authentication credentials after ordinary assignments and
   punctuation, including quoted and escaped diagnostics, without treating
   arbitrary file names as schemes.

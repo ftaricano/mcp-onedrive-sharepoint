@@ -18,6 +18,7 @@ import {
   createUserFriendlyError,
 } from "../graph/error-handler.js";
 import { GraphClient } from "../graph/client.js";
+import { redactOutput } from "../utils/redaction.js";
 import { metadataCache } from "../utils/cache-manager.js";
 
 test.afterEach(() => {
@@ -57,7 +58,16 @@ test("extractPaginatedResult returns items and next page metadata", () => {
   assert.equal(result.pagination.returned, 2);
   assert.equal(result.pagination.totalCount, 12);
   assert.equal(result.pagination.hasMore, true);
-  assert.match(result.pagination.nextPageToken ?? "", /skiptoken=abc/);
+  const mcp = jsonTextResponse(result);
+  for (const text of [mcp.content[0].text, redactOutput(mcp.content[0].text)]) {
+    const wire = JSON.parse(text);
+    assert.equal(
+      wire.pagination.nextPageToken,
+      result.pagination.nextPageToken,
+    );
+    assert.equal(wire.pagination.hasMore, true);
+    assert.match(wire.pagination.nextPageToken, /skiptoken=abc/);
+  }
 });
 
 test("extractPaginatedResult rejects Graph error payloads instead of masking them", () => {
@@ -311,4 +321,35 @@ test("GraphClient.getAllPages returns full result when within caps", async () =>
   assert.equal(response.success, true);
   assert.deepEqual(response.data, [{ id: "a" }, { id: "b" }, { id: "c" }]);
   assert.equal(call, 2);
+});
+
+test("pagination cursors are bound to the request path and reject credential queries", () => {
+  const endpoint = "/me/drive/root/children";
+  const cursor =
+    "https://graph.microsoft.com/v1.0/me/drive/root/children?$skiptoken=fictional-page-cursor";
+  const result = extractPaginatedResult(
+    { value: [], "@odata.nextLink": cursor },
+    1,
+    endpoint,
+  );
+  assert.equal(
+    JSON.parse(redactOutput(jsonTextResponse(result).content[0].text))
+      .pagination.nextPageToken,
+    cursor,
+  );
+  for (const invalid of [
+    cursor.replace("/me/drive/", "/drives/other/"),
+    cursor + "&access_token=fictional-sensitive-canary",
+    cursor + "&sig=fictional-sensitive-canary",
+  ]) {
+    assert.throws(
+      () =>
+        extractPaginatedResult(
+          { value: [], "@odata.nextLink": invalid },
+          1,
+          endpoint,
+        ),
+      GraphApiError,
+    );
+  }
 });

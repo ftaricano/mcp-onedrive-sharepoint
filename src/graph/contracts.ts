@@ -1,4 +1,8 @@
-import { redactSensitive, redactOutput } from "../utils/redaction.js";
+import {
+  redactSensitive,
+  redactOutput,
+  isSafeGraphPaginationUrl,
+} from "../utils/redaction.js";
 import { GraphResponse } from "./models.js";
 import { GraphApiError, createUserFriendlyError } from "./error-handler.js";
 
@@ -48,10 +52,23 @@ export function assertGraphPayloadHasNoError<T>(
 export function extractPaginatedResult<T>(
   payload: GraphResponse<T> | { value?: T[] },
   limit?: number,
+  requestEndpoint?: string,
 ): PaginatedResult<T> {
   const response = assertGraphPayloadHasNoError(payload) as GraphResponse<T>;
   const items = Array.isArray(response?.value) ? response.value : [];
   const nextPageToken = response?.["@odata.nextLink"];
+  if (
+    nextPageToken &&
+    !isSafeGraphPaginationUrl(nextPageToken, requestEndpoint)
+  ) {
+    throw new GraphApiError({
+      error: {
+        code: "InvalidRequest",
+        message:
+          "Invalid Graph pagination cursor or mismatched collection path",
+      },
+    });
+  }
 
   return {
     items,

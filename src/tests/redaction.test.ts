@@ -1257,3 +1257,105 @@ test("round 10 ordinary assignments preserve public file names and diagnostics",
     }
   }
 });
+
+const paginationFieldNames = [
+  "nextPageToken",
+  "@odata.nextLink",
+  "@odata.deltaLink",
+];
+for (const field of paginationFieldNames) {
+  for (const cursorQuery of [
+    "$skiptoken=fictional-page-cursor%2B%2F%3D&$top=10",
+    "$skip=10&$top=10",
+    `$deltatoken=${["fictional", "delta", "cursor"].join("-")}%3D`,
+    "$skiptoken=fictional.cursor.value",
+  ]) {
+    for (const version of ["v1.0", "beta"]) {
+      test(`round 11 operational cursor ${field} / ${cursorQuery} / ${version}`, () => {
+        const collection = cursorQuery.startsWith("$deltatoken")
+          ? "delta"
+          : "children";
+        const cursor = `https://graph.microsoft.com/${version}/me/drive/root/${collection}?${cursorQuery}`;
+        const input = {
+          pagination: { [field]: cursor, hasMore: true },
+          name: "Monthly Report.xlsx",
+          eTag: '"v1"',
+          cTag: '"c1"',
+        };
+        assert.deepEqual(redactSensitive(input), input);
+        const mcp = jsonTextResponse(input).content[0].text;
+        assert.deepEqual(JSON.parse(mcp), input);
+        assert.deepEqual(JSON.parse(redactOutput(mcp)), input);
+        assert.equal(redactOutput(redactOutput(mcp)), redactOutput(mcp));
+        for (const [, layers, raw] of representations) {
+          const diagnostic = `diagnostic ${encodeDiagnostic(JSON.stringify(input), layers, raw)}`;
+          const output = redactOutput(diagnostic);
+          assert.ok(output.includes(cursor));
+          let recovered = output.slice("diagnostic ".length);
+          for (let layer = 0; layer < layers; layer++)
+            recovered = JSON.parse(raw ? '"' + recovered + '"' : recovered);
+          assert.deepEqual(JSON.parse(recovered), input);
+        }
+      });
+    }
+  }
+  for (const unsafe of [
+    `https://graph.microsoft.com/v1.0/me/drive/root/children?$skiptoken=public&access_token=${canary}`,
+    `https://graph.microsoft.com/v1.0/me/drive/root/children?$skiptoken=public&sig=${canary}`,
+    `https://graph.microsoft.com/v1.0/me/drive/root/children?$skiptoken=public&X-Amz-Signature=${canary}`,
+    `https://graph.microsoft.com/v1.0/me/drive/root/children?$skiptoken=public&tempauth=${canary}`,
+    `https://graph.microsoft.com/v1.0/me/drive/root/children?$skiptoken=public&unknown=${canary}`,
+    `https://graph.microsoft.com/v1.0/me/drive/root/children?$skiptoken=${encodeURIComponent(`Bearer ${canary}`)}`,
+    `https://graph.microsoft.com/v1.0/me/drive/root/children?$skiptoken=public#${canary}`,
+    `https://graph.microsoft.com.evil.example/v1.0/me/drive/root/children?$skiptoken=${canary}`,
+    `http://graph.microsoft.com/v1.0/me/drive/root/children?$skiptoken=${canary}`,
+    `https://graph.microsoft.com:444/v1.0/me/drive/root/children?$skiptoken=${canary}`,
+    `https://fictional-user@graph.microsoft.com/v1.0/me/drive/root/children?$skiptoken=${canary}`,
+    `https://graph.microsoft.com/v1.0/other?$skiptoken=${canary}`,
+    `Bearer ${canary} expired`,
+    `DPoP ${canary} expired`,
+  ]) {
+    test(`round 11 unsafe pagination ${field} / ${unsafe}`, () => {
+      const input = { pagination: { [field]: unsafe }, code: "NotFound" };
+      const mcp = jsonTextResponse(input).content[0].text;
+      assert.ok(!redactOutput(`${field}=${unsafe}`).includes(canary));
+      for (const output of [
+        JSON.stringify(redactSensitive(input)),
+        mcp,
+        redactOutput(mcp),
+        redactOutput(`diagnostic ${JSON.stringify(input)}`),
+      ]) {
+        assert.ok(!output.includes(canary));
+        assert.ok(output.includes("NotFound"));
+      }
+      for (const [, layers, raw] of representations)
+        assert.ok(
+          !redactOutput(
+            `diagnostic ${encodeDiagnostic(JSON.stringify(input), layers, raw)}`,
+          ).includes(canary),
+        );
+    });
+  }
+}
+
+test("pagination exceptions never release other token fields or signed URLs", () => {
+  const cursor =
+    "https://graph.microsoft.com/v1.0/me/drive/root/children?$skiptoken=fictional-page-cursor";
+  for (const key of [
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "my_nextPageToken",
+    "NextPageToken",
+  ]) {
+    const output = JSON.parse(
+      jsonTextResponse({ [key]: cursor }).content[0].text,
+    );
+    assert.ok(!output[key].includes("fictional-page-cursor"));
+  }
+  assert.ok(
+    !redactOutput(
+      `https://example.com/file?X-Amz-Signature=${canary}`,
+    ).includes(canary),
+  );
+});

@@ -106,6 +106,7 @@ export async function handleDiscoverSites(args: any) {
     const { items, pagination } = extractPaginatedResult<Site>(
       response.data,
       limit,
+      pageToken || buildDiscoverSitesEndpoint(search).endpoint,
     );
     const sites: Site[] = [...items];
 
@@ -281,6 +282,7 @@ export async function handleListSiteLists(args: any) {
       const { items: allLists, pagination } = extractPaginatedResult(
         response.data,
         limit,
+        endpoint,
       );
 
       // Client-side filtering — Graph API /sites/{siteId}/lists has
@@ -525,6 +527,7 @@ export async function handleListItems(args: any) {
       const { items, pagination } = extractPaginatedResult(
         response.data,
         limit,
+        endpoint,
       );
 
       return jsonTextResponse({

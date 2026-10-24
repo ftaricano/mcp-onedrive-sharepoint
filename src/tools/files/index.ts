@@ -132,6 +132,7 @@ export async function handleListFiles(args: any) {
       const { items, pagination } = extractPaginatedResult(
         response.data,
         limit,
+        endpoint,
       );
 
       return jsonTextResponse({
@@ -726,6 +727,7 @@ export async function handleSearchFiles(args: any) {
       const { items, pagination } = extractPaginatedResult(
         response.data,
         limit,
+        endpoint,
       );
 
       return jsonTextResponse({
