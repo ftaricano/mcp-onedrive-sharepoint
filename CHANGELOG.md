@@ -8,6 +8,10 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- Redact registered authentication credentials after ordinary assignments and
+  punctuation, including quoted and escaped diagnostics, without treating
+  arbitrary file names as schemes.
+
 - Cover the IANA HTTP authentication scheme registry and Microsoft/AWS extensions
   in standalone credential redaction, including opaque DPoP access tokens. Derive
   regression coverage from the shared immutable scheme catalogue.

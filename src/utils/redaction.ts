@@ -278,11 +278,11 @@ function redactString(value: string, depth = 0): string {
       lexer.lastIndex = end;
       continue;
     }
-    // Registered standalone schemes share one grammar; unknown names need a header.
+    // Scheme identity comes from the catalogue, not the preceding delimiter.
+    // Assignment/punctuation boundaries must not suppress credential consumption.
+    // Quoted containers recurse below; unknown scheme names still need a header.
     const authenticationEnd =
-      !quoted &&
-      value[start - 1] !== "=" &&
-      standaloneSchemes.has(part.toLowerCase())
+      !quoted && standaloneSchemes.has(part.toLowerCase())
         ? standaloneAuthenticationEnd(value, lexer.lastIndex)
         : null;
     if (authenticationEnd !== null) {

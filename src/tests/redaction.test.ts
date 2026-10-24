@@ -1128,3 +1128,132 @@ test("expanded catalogue preserves ordinary file names and unknown header scheme
     }
   }
 });
+
+// Round 10: delimiters before a registered scheme never change credential policy.
+const assignmentContexts: Array<[string, string, string]> = [];
+for (const separator of ["=", "= ", ":", ": "]) {
+  for (const quote of ["", '"', "'"]) {
+    assignmentContexts.push([
+      `auth${separator}${quote}`,
+      `auth${separator}${quote}`,
+      quote,
+    ]);
+  }
+}
+const punctuationContexts: Array<[string, string, string]> = [
+  ["parenthesis", "(", ")"],
+  ["bracket", "[", "]"],
+  ["brace", "{", "}"],
+  ["comma", ",", ""],
+  ["semicolon", ";", ""],
+];
+for (const registeredScheme of authenticationSchemeCatalog) {
+  for (const scheme of new Set([
+    registeredScheme,
+    registeredScheme.toLowerCase(),
+  ])) {
+    for (const [context, before, after] of [
+      ...assignmentContexts,
+      ...punctuationContexts,
+    ]) {
+      for (const suffix of ["", " expired"]) {
+        for (const [representation, layers, raw] of representations) {
+          test(`delimited catalogue credential ${scheme} / ${context} / ${suffix || "end"} / ${representation}`, (t) => {
+            const message = `${before}${scheme} ${canary}${suffix}${after}`;
+            const masked = `${before}${scheme} ***${suffix}${after}`;
+            const metadata = {
+              message,
+              name: "Monthly Report.xlsx",
+              code: "NotFound",
+              eTag: '"v1"',
+              cTag: '"c1"',
+              url: base,
+            };
+            const diagnostic = `diagnostic ${encodeDiagnostic(JSON.stringify(metadata), layers, raw)}`;
+            const envelope = jsonTextResponse({ ...metadata, diagnostic });
+            const consoleLog = t.mock.method(console, "log", () => {});
+            AuditLogger.log("upload", "fictional-user", diagnostic, "failure", {
+              diagnostic,
+            });
+            for (const output of [
+              redactOutput(message),
+              redactOutput(diagnostic),
+              envelope.content[0].text,
+              redactOutput(envelope.content[0].text),
+              JSON.stringify(
+                toolErrorResponse("upload_file", new Error(diagnostic)),
+              ),
+              createUserFriendlyError(new Error(diagnostic)),
+              SecurityValidator.sanitizeForLogging(diagnostic),
+              SecurityValidator.sanitizeForLogging({ diagnostic }),
+              JSON.stringify(AuditLogger.getRecentLogs(1)),
+              JSON.stringify(consoleLog.mock.calls),
+            ]) {
+              assert.ok(!output.includes(canary));
+              assert.ok(output.includes(`${scheme} ***${suffix}`));
+            }
+            assert.equal(redactOutput(message), masked);
+            assert.equal(redactOutput(redactOutput(message)), masked);
+            assert.equal(
+              redactOutput(redactOutput(diagnostic)),
+              redactOutput(diagnostic),
+            );
+            assert.deepEqual(JSON.parse(envelope.content[0].text), {
+              ...metadata,
+              message: masked,
+              diagnostic: redactOutput(diagnostic),
+            });
+            let recovered = redactOutput(diagnostic).slice(
+              "diagnostic ".length,
+            );
+            for (let layer = 0; layer < layers; layer++)
+              recovered = JSON.parse(raw ? '"' + recovered + '"' : recovered);
+            assert.deepEqual(JSON.parse(recovered), {
+              ...metadata,
+              message: masked,
+            });
+          });
+        }
+      }
+    }
+  }
+}
+
+test("round 10 literal review examples after equals", () => {
+  const direct = redactOutput("auth=Bearer fictional-sensitive-canary expired");
+  const mcp = jsonTextResponse({
+    message: "auth=Bearer fictional-sensitive-canary expired",
+  });
+  const json = redactOutput(
+    'diagnostic {"message":"auth=Bearer fictional-sensitive-canary expired"}',
+  );
+  for (const output of [direct, JSON.stringify(mcp), json])
+    assert.ok(!output.includes(canary));
+  assert.equal(direct, "auth=Bearer *** expired");
+  assert.deepEqual(JSON.parse(mcp.content[0].text), { message: direct });
+  assert.equal(json, 'diagnostic {"message":"auth=Bearer *** expired"}');
+});
+
+test("round 10 ordinary assignments preserve public file names and diagnostics", () => {
+  for (const name of [
+    "Monthly Report.xlsx",
+    "Quarterly Summary.xlsx",
+    "Annual Budget.csv",
+  ]) {
+    for (const [, before, after] of [
+      ...assignmentContexts,
+      ...punctuationContexts,
+    ]) {
+      const input = {
+        message: `${before}${name}${after}`,
+        name,
+        code: "NotFound",
+        eTag: '"v1"',
+        cTag: '"c1"',
+        url: base,
+      };
+      assert.deepEqual(redactSensitive(input), input);
+      assert.deepEqual(JSON.parse(redactOutput(JSON.stringify(input))), input);
+    }
+  }
+});
