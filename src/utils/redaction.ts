@@ -155,13 +155,35 @@ function readValue(text: string, start: number): string {
   return tail.slice(0, offset).trimEnd();
 }
 
-// Standalone names must be registered; arbitrary words are ordinary text.
-// FictionalScheme is the existing synthetic extension used by compatibility tests.
-// Unknown schemes remain supported under authentication headers (any HTTP token).
+// Source: IANA HTTP Authentication Scheme Registry (snapshot 2026-10-23):
+// https://www.iana.org/assignments/http-authschemes/http-authschemes.xhtml
+// DPoP: RFC 9449 section 7.1. NTLM, Token and AWS4-HMAC-SHA256 are
+// additional Microsoft/AWS/de facto schemes. FictionalScheme retains existing
+// synthetic compatibility coverage. Unknown names still require an auth header;
+// never infer a scheme from arbitrary words (for example, multiword file names).
+// Export the immutable catalogue so regression matrices use this same source.
+export const authenticationSchemeCatalog = Object.freeze([
+  "Basic",
+  "Bearer",
+  "Concealed",
+  "Digest",
+  "DPoP",
+  "GNAP",
+  "HOBA",
+  "Mutual",
+  "Negotiate",
+  "OAuth",
+  "PrivateToken",
+  "SCRAM-SHA-1",
+  "SCRAM-SHA-256",
+  "vapid",
+  "NTLM",
+  "Token",
+  "AWS4-HMAC-SHA256",
+  "FictionalScheme",
+]);
 const standaloneSchemes = new Set(
-  "Bearer Basic Digest Negotiate NTLM AWS4-HMAC-SHA256 Token FictionalScheme"
-    .toLowerCase()
-    .split(" "),
+  authenticationSchemeCatalog.map((scheme) => scheme.toLowerCase()),
 );
 
 /** Consume the credential atomically, then resume at the diagnostic suffix. */

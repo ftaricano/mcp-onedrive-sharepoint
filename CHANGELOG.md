@@ -8,6 +8,10 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- Cover the IANA HTTP authentication scheme registry and Microsoft/AWS extensions
+  in standalone credential redaction, including opaque DPoP access tokens. Derive
+  regression coverage from the shared immutable scheme catalogue.
+
 - Mask the first standalone authentication credential even before diagnostic prose,
   preserving its suffix and JSON boundaries. Restrict standalone schemes to a
   registered set so ordinary multiword file names remain readable; unknown

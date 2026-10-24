@@ -2,7 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { redactOutput, redactSensitive } from "../utils/redaction.js";
+import {
+  authenticationSchemeCatalog,
+  redactOutput,
+  redactSensitive,
+} from "../utils/redaction.js";
 import { jsonTextResponse, toolErrorResponse } from "../graph/contracts.js";
 import { AuditLogger, SecurityValidator } from "../utils/security-validator.js";
 import { createUserFriendlyError } from "../graph/error-handler.js";
@@ -979,6 +983,148 @@ test("unknown schemes require authentication headers; ordinary multiword metadat
       assert.ok(!output.includes(canary), name);
       assert.ok(output.includes("UnregisteredAuth ***"), name);
       assert.ok(output.includes(ordinary.name), name);
+    }
+  }
+});
+
+// Round 9: the production catalogue, not a second list of scheme names, owns coverage.
+for (const registeredScheme of authenticationSchemeCatalog) {
+  for (const scheme of new Set([
+    registeredScheme,
+    registeredScheme.toLowerCase(),
+  ])) {
+    for (const [form, credential] of proseCredentialForms) {
+      for (const suffix of ["", " expired"]) {
+        for (const [representation, layers, raw] of representations) {
+          test(`catalogue credential ${scheme} / ${form} / ${suffix || "end"} / ${representation}`, (t) => {
+            const line = `${scheme} ${credential}${suffix}`;
+            const metadata = {
+              message: line,
+              name: "Monthly Report.xlsx",
+              code: "NotFound",
+              eTag: '"v1"',
+              cTag: '"c1"',
+              url: base,
+            };
+            const diagnostic = `diagnostic ${encodeDiagnostic(JSON.stringify(metadata), layers, raw)}`;
+            const envelope = jsonTextResponse({ ...metadata, diagnostic });
+            const consoleLog = t.mock.method(console, "log", () => {});
+            AuditLogger.log("upload", "fictional-user", diagnostic, "failure", {
+              diagnostic,
+            });
+            for (const output of [
+              redactOutput(line),
+              redactOutput(diagnostic),
+              envelope.content[0].text,
+              redactOutput(envelope.content[0].text),
+              JSON.stringify(
+                toolErrorResponse("upload_file", new Error(diagnostic)),
+              ),
+              createUserFriendlyError(new Error(diagnostic)),
+              SecurityValidator.sanitizeForLogging(diagnostic),
+              SecurityValidator.sanitizeForLogging({ diagnostic }),
+              JSON.stringify(AuditLogger.getRecentLogs(1)),
+              JSON.stringify(consoleLog.mock.calls),
+            ]) {
+              assert.ok(!output.includes(canary));
+              assert.ok(output.includes(`${scheme} ***${suffix}`));
+            }
+            assert.equal(redactOutput(line), `${scheme} ***${suffix}`);
+            assert.equal(
+              redactOutput(redactOutput(line)),
+              `${scheme} ***${suffix}`,
+            );
+            assert.deepEqual(JSON.parse(envelope.content[0].text), {
+              ...metadata,
+              message: `${scheme} ***${suffix}`,
+              diagnostic: redactOutput(diagnostic),
+            });
+            let recovered = redactOutput(diagnostic).slice(
+              "diagnostic ".length,
+            );
+            for (let layer = 0; layer < layers; layer++)
+              recovered = JSON.parse(raw ? '"' + recovered + '"' : recovered);
+            assert.deepEqual(JSON.parse(recovered), {
+              ...metadata,
+              message: `${scheme} ***${suffix}`,
+            });
+          });
+        }
+      }
+    }
+    for (const suffix of ["", " expired"]) {
+      for (const [representation, layers, raw] of representations) {
+        test(`CLI catalogue credential ${scheme} / ${suffix || "end"} / ${representation}`, () => {
+          const diagnostic = encodeDiagnostic(
+            `${scheme} ${canary}${suffix}`,
+            layers,
+            raw,
+          );
+          const child = spawnSync(
+            process.execPath,
+            [fileURLToPath(new URL("../cli.js", import.meta.url)), diagnostic],
+            { encoding: "utf8", env: { MCP_TOOL_PROFILE: "core" } },
+          );
+          assert.equal(child.status, 1);
+          assert.equal(child.stdout, "");
+          assert.ok(!child.stderr.includes(canary));
+          assert.ok(child.stderr.includes(`${scheme} ***${suffix}`));
+        });
+      }
+    }
+  }
+}
+
+test("round 9 literal review example: standalone DPoP", () => {
+  const output = redactOutput("DPoP fictional-sensitive-canary expired");
+  assert.ok(!output.includes(canary));
+  assert.equal(output, "DPoP *** expired");
+});
+
+test("round 9 literal review example: MCP DPoP", () => {
+  const output = jsonTextResponse({
+    message: "DPoP fictional-sensitive-canary expired",
+  });
+  assert.ok(!JSON.stringify(output).includes(canary));
+  assert.deepEqual(JSON.parse(output.content[0].text), {
+    message: "DPoP *** expired",
+  });
+});
+
+test("round 9 literal review example: textual JSON DPoP", () => {
+  const output = redactOutput(
+    'diagnostic {"message":"DPoP fictional-sensitive-canary expired"}',
+  );
+  assert.ok(!output.includes(canary));
+  assert.equal(output, 'diagnostic {"message":"DPoP *** expired"}');
+});
+
+test("expanded catalogue preserves ordinary file names and unknown header schemes", () => {
+  for (const name of [
+    "Monthly Report.xlsx",
+    "Quarterly Summary.xlsx",
+    "Annual Budget.csv",
+  ]) {
+    const metadata = {
+      name,
+      message: `${name} expired`,
+      code: "NotFound",
+      eTag: '"v1"',
+      cTag: '"c1"',
+      url: base,
+    };
+    assert.deepEqual(redactSensitive(metadata), metadata);
+    for (const header of authenticationHeaders) {
+      const result = JSON.parse(
+        jsonTextResponse({
+          ...metadata,
+          [header]: `UnregisteredAuth ${canary} expired`,
+        }).content[0].text,
+      );
+      assert.deepEqual(result, {
+        ...metadata,
+        [header]: "UnregisteredAuth ***",
+      });
     }
   }
 });
