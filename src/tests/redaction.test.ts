@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import {
   authenticationSchemeCatalog,
   redactOutput,
+  redactDiagnostic,
+  isSafeGraphPaginationUrl,
   redactSensitive,
 } from "../utils/redaction.js";
 import { jsonTextResponse, toolErrorResponse } from "../graph/contracts.js";
@@ -1519,3 +1521,178 @@ test("round 13 CLI stderr omits continuation cursors before bootstrap", () => {
     assert.ok(child.stderr.includes("Unknown tool"));
   }
 });
+
+// Round 14: URL authorities are never a public credential transport.
+const urlUser = ["FICTIONAL", "TEST", "USER"].join("_");
+const urlPassword = ["FICTIONAL", "TEST", "PASSWORD"].join("_");
+const percentLiteral = (value: string) =>
+  Array.from(
+    value,
+    (char) => "%" + char.charCodeAt(0).toString(16).toUpperCase(),
+  ).join("");
+const userinfoForms = [
+  ["literal", `${urlUser}:${urlPassword}`],
+  ["percent", `${percentLiteral(urlUser)}:${percentLiteral(urlPassword)}`],
+  ["password-percent", `${urlUser}:${percentLiteral(urlPassword)}`],
+  ["user-percent", `${percentLiteral(urlUser)}:${urlPassword}`],
+  ["user-only", percentLiteral(urlUser)],
+  ["password-only", `:${percentLiteral(urlPassword)}`],
+];
+for (const host of [
+  "contoso.sharepoint.com",
+  "example.com",
+  "graph.microsoft.com",
+]) {
+  for (const [form, userinfo] of userinfoForms) {
+    test(`round 14 userinfo ${host} / ${form}`, () => {
+      for (const query of [
+        "",
+        `?sig=${["fictional", "signature"].join("-")}`,
+      ]) {
+        const url = `https://${userinfo}@${host}/report.xlsx${query}`;
+        const input = {
+          url,
+          nested: [{ url }],
+          downloadUrl: url,
+          eTag: '"v1"',
+          code: "NotFound",
+        };
+        const mcp = jsonTextResponse(input).content[0].text;
+        const outputs = [
+          redactOutput(url),
+          JSON.stringify(redactSensitive(input)),
+          mcp,
+          redactOutput(mcp),
+        ];
+        for (const [, layers, raw] of representations) {
+          const diagnostic = `diagnostic ${encodeDiagnostic(JSON.stringify(input), layers, raw)}`;
+          outputs.push(
+            redactOutput(diagnostic),
+            redactDiagnostic(diagnostic),
+            SecurityValidator.sanitizeForLogging(diagnostic),
+            createUserFriendlyError(new Error(diagnostic)),
+            JSON.stringify(
+              toolErrorResponse("download_file", new Error(diagnostic)),
+            ),
+          );
+        }
+        for (const output of outputs) {
+          for (const secret of [
+            urlUser,
+            urlPassword,
+            percentLiteral(urlUser),
+            percentLiteral(urlPassword),
+          ])
+            assert.ok(!output.includes(secret));
+          assert.ok(output.includes(`https://${host}/report.xlsx`));
+          assert.ok(output.includes("***"));
+        }
+        assert.equal(JSON.parse(mcp).eTag, '"v1"');
+        assert.equal(JSON.parse(mcp).code, "NotFound");
+        assert.equal(redactOutput(redactOutput(url)), redactOutput(url));
+      }
+    });
+    for (const field of paginationFieldNames) {
+      for (const parameter of ["$skiptoken", "$deltatoken", "$searchtoken"]) {
+        test(`round 14 userinfo cursor ${host} / ${form} / ${field} / ${parameter}`, () => {
+          const inner = `https://${userinfo}@${host}/report.xlsx`;
+          for (const layers of [1, 2]) {
+            let encoded = inner;
+            for (let i = 0; i < layers; i++)
+              encoded = encodeURIComponent(encoded);
+            const cursor = `https://graph.microsoft.com/v1.0/me/drive/root/children?$skip=1&${parameter}=${encoded}`;
+            assert.equal(isSafeGraphPaginationUrl(cursor), false);
+            const input = { [field]: cursor, code: "NotFound" };
+            const mcp = jsonTextResponse(input).content[0].text;
+            const outputs = [
+              mcp,
+              redactOutput(mcp),
+              redactDiagnostic(input),
+              SecurityValidator.sanitizeForLogging(input),
+              createUserFriendlyError(new Error(cursor)),
+              JSON.stringify(
+                toolErrorResponse(
+                  "list_files",
+                  new Error(JSON.stringify(input)),
+                ),
+              ),
+            ];
+            for (const [, depth, raw] of representations) {
+              const message = encodeDiagnostic(
+                JSON.stringify(input),
+                depth,
+                raw,
+              );
+              outputs.push(
+                redactOutput(message),
+                redactDiagnostic(message),
+                SecurityValidator.sanitizeForLogging(message),
+                createUserFriendlyError(new Error(message)),
+                JSON.stringify(
+                  toolErrorResponse("list_files", new Error(message)),
+                ),
+              );
+            }
+            for (const output of outputs) {
+              for (const secret of [
+                urlUser,
+                urlPassword,
+                percentLiteral(urlUser),
+                percentLiteral(urlPassword),
+                encoded,
+              ])
+                assert.ok(!output.includes(secret));
+            }
+          }
+        });
+      }
+    }
+  }
+}
+
+for (const version of ["v1.0", "beta"]) {
+  test(`round 14 site search query is collection-specific / ${version}`, () => {
+    const opaque = ["fictional", "page", "cursor"].join("-");
+    for (const search of ["*", "finance", "Finance%20Area"]) {
+      const suffix = `?search=${search}&$top=1&$skiptoken=${opaque}`;
+      const cursor = `https://graph.microsoft.com/${version}/sites${suffix}`;
+      assert.equal(
+        isSafeGraphPaginationUrl(cursor, "/sites?search=" + search),
+        version === "v1.0",
+      );
+      assert.equal(isSafeGraphPaginationUrl(cursor), true);
+      for (const field of paginationFieldNames) {
+        const mcp = jsonTextResponse({ [field]: cursor }).content[0].text;
+        assert.equal(JSON.parse(redactOutput(mcp))[field], cursor);
+        for (const output of [
+          redactDiagnostic({ [field]: cursor }),
+          SecurityValidator.sanitizeForLogging({ [field]: cursor }),
+          createUserFriendlyError(new Error(cursor)),
+        ])
+          assert.ok(!output.includes(opaque));
+      }
+      for (const path of [
+        "me/drive/root/children",
+        "drives/fictional/root/children",
+        "sites/fictional/lists",
+      ]) {
+        assert.equal(
+          isSafeGraphPaginationUrl(
+            `https://graph.microsoft.com/${version}/${path}${suffix}`,
+          ),
+          false,
+        );
+      }
+      for (const key of ["unknown", "access_token", "sig", "code", "api_key"]) {
+        const unsafe =
+          cursor + `&${key}=` + ["FICTIONAL", "TEST", "VALUE"].join("_");
+        assert.equal(isSafeGraphPaginationUrl(unsafe), false);
+        assert.ok(
+          !redactOutput(
+            jsonTextResponse({ nextPageToken: unsafe }).content[0].text,
+          ).includes(opaque),
+        );
+      }
+    }
+  });
+}

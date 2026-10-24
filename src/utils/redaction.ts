@@ -23,6 +23,15 @@ const paginationQueryKeys = new Set([
   "$format",
   "$searchtoken",
 ]);
+// Collection/list handlers use common OData options. Graph site discovery uses
+// the non-OData `search` option only on /sites, never on drive/list endpoints.
+function isPaginationQueryKey(url: URL, key: string): boolean {
+  return (
+    paginationQueryKeys.has(key.toLowerCase()) ||
+    (key.toLowerCase() === "search" &&
+      /^\/(?:v1\.0|beta)\/sites$/.test(url.pathname))
+  );
+}
 const signedQueryKey =
   /^(?:x-amz-.+|x-ms-.+|sig|signature|tempauth|sv|se|sp|sr|st|skt|ske|sks|skv|skoid|sktid)$/i;
 
@@ -61,10 +70,7 @@ export function isSafeGraphPaginationUrl(
     )
       return false;
     for (const [key, entry] of entries) {
-      if (
-        !paginationQueryKeys.has(key.toLowerCase()) ||
-        signedQueryKey.test(key)
-      )
+      if (!isPaginationQueryKey(url, key) || signedQueryKey.test(key))
         return false;
       // Inspect opaque cursor contents with the SAME field/header lexer, including
       // nested JSON, escapes and percent encoding. Only bare opaque JWT-shaped
@@ -159,13 +165,15 @@ function safeUrl(value: string): string {
 function redactUrl(value: string, preservePagination = true): string {
   try {
     const url = new URL(value);
+    // URL authority is not just a hostname: userinfo is always private, even
+    // without a query. Returning host/path also makes cursor inspection reject
+    // nested URLs carrying literal or percent-encoded usernames/passwords.
+    if (url.username || url.password) return safeUrl(value);
     // Logs/errors omit even malformed or credential-bearing continuation URLs.
     if (
       !preservePagination &&
       url.hostname === "graph.microsoft.com" &&
-      [...url.searchParams.keys()].some((key) =>
-        paginationQueryKeys.has(key.toLowerCase()),
-      )
+      [...url.searchParams.keys()].some((key) => isPaginationQueryKey(url, key))
     )
       return safeUrl(value);
     // Unknown SharePoint signing parameters are private too: redact its whole query.

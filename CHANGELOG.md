@@ -6,6 +6,8 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Remove URL userinfo from all output and reject credential-bearing URLs inside pagination cursors; preserve the endpoint-specific `search` option when paginating site discovery.
+
 - Preserve SharePoint identifiers by recognizing JOSE JWT headers; validate embedded cursor credentials and omit continuation URLs from diagnostics while preserving MCP/CLI pagination.
 
 ### Security
