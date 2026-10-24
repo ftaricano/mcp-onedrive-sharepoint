@@ -1,3 +1,8 @@
+import {
+  redactSensitive,
+  redactDiagnostic,
+  isSafeGraphPaginationUrl,
+} from "../utils/redaction.js";
 import { GraphResponse } from "./models.js";
 import { GraphApiError, createUserFriendlyError } from "./error-handler.js";
 
@@ -47,10 +52,23 @@ export function assertGraphPayloadHasNoError<T>(
 export function extractPaginatedResult<T>(
   payload: GraphResponse<T> | { value?: T[] },
   limit?: number,
+  requestEndpoint?: string,
 ): PaginatedResult<T> {
   const response = assertGraphPayloadHasNoError(payload) as GraphResponse<T>;
   const items = Array.isArray(response?.value) ? response.value : [];
   const nextPageToken = response?.["@odata.nextLink"];
+  if (
+    nextPageToken &&
+    !isSafeGraphPaginationUrl(nextPageToken, requestEndpoint)
+  ) {
+    throw new GraphApiError({
+      error: {
+        code: "InvalidRequest",
+        message:
+          "Invalid Graph pagination cursor or mismatched collection path",
+      },
+    });
+  }
 
   return {
     items,
@@ -71,7 +89,7 @@ export function jsonTextResponse(payload: unknown): {
     content: [
       {
         type: "text",
-        text: JSON.stringify(payload, null, 2),
+        text: JSON.stringify(redactSensitive(payload), null, 2),
       },
     ],
   };
@@ -97,7 +115,9 @@ export function toolErrorResponse(
 } {
   const suffix = context ? ` (${context})` : "";
   const friendly = createUserFriendlyError(error, context);
-  const summary = `Error in ${toolName}${suffix}: ${friendly}`;
+  const summary = redactDiagnostic(
+    `Error in ${toolName}${suffix}: ${friendly}`,
+  );
 
   const graphError =
     error instanceof GraphApiError ? error : new GraphApiError(error, context);
@@ -119,7 +139,10 @@ export function toolErrorResponse(
   return {
     content: [
       { type: "text", text: summary },
-      { type: "text", text: JSON.stringify(payload, null, 2) },
+      {
+        type: "text",
+        text: JSON.stringify(redactSensitive(payload, false), null, 2),
+      },
     ],
     isError: true,
   };

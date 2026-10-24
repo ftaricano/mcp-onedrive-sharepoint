@@ -6,6 +6,63 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Remove URL userinfo from all output and reject credential-bearing URLs inside pagination cursors; preserve the endpoint-specific `search` option when paginating site discovery.
+
+- Preserve SharePoint identifiers by recognizing JOSE JWT headers; validate embedded cursor credentials and omit continuation URLs from diagnostics while preserving MCP/CLI pagination.
+
+### Security
+
+- Preserve validated Graph pagination and delta cursors in known protocol fields
+  through MCP and CLI redaction. Reject credential-bearing queries and bind
+  paginated handler continuations to the requested collection path.
+
+- Redact registered authentication credentials after ordinary assignments and
+  punctuation, including quoted and escaped diagnostics, without treating
+  arbitrary file names as schemes.
+
+- Cover the IANA HTTP authentication scheme registry and Microsoft/AWS extensions
+  in standalone credential redaction, including opaque DPoP access tokens. Derive
+  regression coverage from the shared immutable scheme catalogue.
+
+- Mask the first standalone authentication credential even before diagnostic prose,
+  preserving its suffix and JSON boundaries. Restrict standalone schemes to a
+  registered set so ordinary multiword file names remain readable; unknown
+  schemes continue to be masked in authentication headers.
+
+- Mask signed download URLs, authentication query values and authorization headers
+  in tool responses, CLI output and diagnostics; retain URL host and path only.
+  Signed URLs in output are diagnostic values and must not be reused for requests.
+- Apply the same token field pattern to objects and embedded JSON diagnostics,
+  including `refresh_token` and `id_token`, while preserving Graph error codes.
+- Redact sensitive fields inside escaped JSON string literals in diagnostics,
+  errors and audit logs, including multiple serialization layers. Bound excessive
+  nesting with a masked value rather than returning uninspected text.
+- Preserve the association between authorization header names and quoted values
+  while masking diagnostics, without consuming adjacent JSON fields.
+- Unify sensitive field masking across objects, assignments, quoted values,
+  headers and escaped diagnostics, including passwords and client secrets.
+  Mask standalone JWT-shaped values and all SharePoint query strings, including
+  unknown signing parameter names, while retaining URL host/path. Ordinary Graph
+  error codes are preserved via an explicit public diagnostic-code allowlist;
+  unknown code values and all code query/equals assignments are masked.
+
+- Authorization, Proxy-Authorization and WWW-Authenticate output preserves only
+  the scheme plus `***`, masking every parameter through end of line or the full
+  quoted/JSON value. This includes Digest, AWS4-HMAC-SHA256 and unknown schemes;
+  external JSON metadata remains separate from the masked header value.
+- Standalone authentication schemes share one credential grammar for token68,
+  quoted values and parameter lists, including unknown scheme names and escaped
+  diagnostics. The scheme stays visible while its credential becomes `***`.
+
+### Added
+
+- Upload and download results expose `file.eTag` and `file.cTag` (null when absent).
+  Downloads read metadata first and send `If-Match` when an eTag is available.
+  This conditional request applies to download only. `upload_file` exposes the
+  resulting tags but does not accept an expected eTag or enforce conditional upload;
+  conditional upload remains a separate follow-up.
+  Version tags identify the remote item; they are not a local content checksum.
+
 ### Changed
 
 - Upgrade MSAL Node to 7.0.0 and require Node.js 20 or newer.

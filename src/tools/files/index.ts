@@ -132,6 +132,7 @@ export async function handleListFiles(args: any) {
       const { items, pagination } = extractPaginatedResult(
         response.data,
         limit,
+        endpoint,
       );
 
       return jsonTextResponse({
@@ -214,7 +215,28 @@ export async function handleDownloadFile(args: any) {
       "/content",
     );
 
-    const response = await client.downloadFile(endpoint);
+    const metadataResponse = await client.get<DriveItem>(
+      buildDriveItemEndpoint({
+        itemId: fileId,
+        itemPath: filePath,
+        siteId,
+        driveId,
+      }),
+      { $select: "id,name,eTag,cTag" },
+    );
+    if (!metadataResponse.success || !metadataResponse.data) {
+      throw new Error("Failed to read download metadata");
+    }
+    const item = metadataResponse.data;
+    const file = {
+      id: item.id,
+      name: item.name,
+      eTag: item.eTag ?? null,
+      cTag: item.cTag ?? null,
+    };
+    const response = await client.downloadFile(endpoint, {
+      headers: item.eTag ? { "If-Match": item.eTag } : undefined,
+    });
 
     if (response.success && response.data) {
       const buffer = response.data as Buffer;
@@ -229,6 +251,7 @@ export async function handleDownloadFile(args: any) {
           success: true,
           target: describeDriveTarget({ siteId, driveId }),
           site: resolvedSite,
+          file,
           message: `File downloaded successfully to ${safeOutputPath}`,
           size: buffer.length,
           path: safeOutputPath,
@@ -238,6 +261,7 @@ export async function handleDownloadFile(args: any) {
           success: true,
           target: describeDriveTarget({ siteId, driveId }),
           site: resolvedSite,
+          file,
           message: "File downloaded successfully",
           size: buffer.length,
           contentType: "application/octet-stream",
@@ -354,6 +378,8 @@ export async function handleUploadFile(args: any) {
           size: item.size,
           webUrl: item.webUrl,
           lastModified: item.lastModifiedDateTime,
+          eTag: item.eTag ?? null,
+          cTag: item.cTag ?? null,
         },
       });
     }
@@ -701,6 +727,7 @@ export async function handleSearchFiles(args: any) {
       const { items, pagination } = extractPaginatedResult(
         response.data,
         limit,
+        endpoint,
       );
 
       return jsonTextResponse({

@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 
+import { redactOutput } from "../utils/redaction.js";
 import { __setGraphClientInstanceForTests } from "../graph/client.js";
 import {
   __setUtilityDependenciesForTests,
@@ -606,4 +607,80 @@ test("version_management handler returns centralized MCP contract on error", asy
   assert.equal(response.isError, true);
   assert.equal(response.content[0].type, "text");
   assert.match(response.content[0].text, /Error in version_management/);
+});
+
+for (const cliSecondPass of [false, true]) {
+  test(`list_files preserves a two-page cursor round trip / CLI=${cliSecondPass}`, async () => {
+    const cursor =
+      "https://graph.microsoft.com/v1.0/drives/drive-1/root/children?$skiptoken=fictional-page-cursor%2B%2F%3D&$top=1";
+    const calls: Array<{ endpoint: string; params: unknown }> = [];
+    __setGraphClientInstanceForTests({
+      get: async (endpoint: string, params: unknown) => {
+        calls.push({ endpoint, params });
+        const second = calls.length === 2;
+        return {
+          success: true,
+          data: {
+            value: [
+              {
+                id: second ? "item-2" : "item-1",
+                name: "Monthly Report.xlsx",
+                size: 42,
+                file: { mimeType: "application/octet-stream" },
+                lastModifiedDateTime: "2026-04-14T18:00:00Z",
+                webUrl: "https://contoso.sharepoint.com/report",
+                parentReference: { path: "/drive/root:", driveId: "drive-1" },
+              },
+            ],
+            ...(second ? {} : { "@odata.nextLink": cursor }),
+          },
+        };
+      },
+      cleanup: () => {},
+    } as any);
+    const first = (await handleListFiles({
+      driveId: "drive-1",
+      limit: 1,
+    })) as ToolEnvelope;
+    assert.equal(first.isError, undefined);
+    const wire = JSON.parse(
+      cliSecondPass
+        ? redactOutput(first.content[0].text)
+        : first.content[0].text,
+    );
+    assert.equal(wire.pagination.nextPageToken, cursor);
+    assert.equal(wire.pagination.hasMore, true);
+    const second = (await handleListFiles({
+      driveId: "drive-1",
+      limit: 1,
+      pageToken: wire.pagination.nextPageToken,
+    })) as ToolEnvelope;
+    assert.equal(second.isError, undefined);
+    const last = JSON.parse(redactOutput(second.content[0].text));
+    assert.equal(last.pagination.hasMore, false);
+    assert.equal(last.items[0].id, "item-2");
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].endpoint, "/drives/drive-1/root/children");
+    assert.equal(calls[1].endpoint, cursor);
+    assert.equal(calls[1].params, undefined);
+  });
+}
+
+test("list_files rejects a nextLink outside the requested collection", async () => {
+  __setGraphClientInstanceForTests({
+    get: async () => ({
+      success: true,
+      data: {
+        value: [],
+        "@odata.nextLink":
+          "https://graph.microsoft.com/v1.0/drives/other-drive/root/children?$skiptoken=fictional-page-cursor",
+      },
+    }),
+    cleanup: () => {},
+  } as any);
+  const response = (await handleListFiles({
+    driveId: "drive-1",
+  })) as ToolEnvelope;
+  assert.equal(response.isError, true);
+  assert.ok(!JSON.stringify(response).includes("fictional-page-cursor"));
 });
