@@ -170,8 +170,27 @@ CLI directly with the credentials from the environment.
 ods health_check
 ods list_files --site=primary --path=/
 ods list_files --driveId=b!abc --path=/Shared%20Documents --limit=50
-ods upload_file --json '{"driveId":"b!abc","path":"/x.txt","content":"hello"}'
+ods upload_file --localPath=./report.txt --remotePath=Documents/report.txt --driveId=acme-drive --retryPolicy=single-attempt
 ```
+
+### Upload retry policy
+
+`upload_file` accepts `retryPolicy` through both CLI flags/JSON and MCP arguments:
+`default` (also when omitted) retains the existing retries, redirects, folder
+preparation and large-file upload sessions.
+
+`single-attempt` supports only simple uploads smaller than 4 MiB (4,194,304 bytes).
+The destination folder must already exist: paths are sanitized as usual, but this
+mode never creates folders or upload sessions. It sends at most one upload PUT,
+with redirects disabled, and returns any HTTP/network error without replay or
+fallback. Invalid policies (including non-string values) and files at or above
+the limit are rejected before any Graph write. Programmatic callers can pass the
+same policy in `UploadOptions`.
+
+An error, timeout, reset or lost response can still mean the write took effect.
+This policy does not provide rollback, CAS or exactly-once delivery. Stop and
+reconcile uncertainty externally; do not automatically query and retry the upload.
+A missing destination folder also returns an error without creating it or retrying.
 
 ### Rules for flags
 
