@@ -866,7 +866,10 @@ export class GraphClient {
         const itemId = key.split("-")[0];
         await this.closeExcelSession(itemId, session.id);
       } catch (error) {
-        console.warn(`Failed to close Excel session ${session.id}:`, error);
+        console.warn(
+          "Failed to close Excel session:",
+          new GraphApiError(error).message,
+        );
       }
     }
 

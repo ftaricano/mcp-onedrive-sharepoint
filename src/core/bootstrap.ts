@@ -1,3 +1,4 @@
+import { redactDiagnostic as redactOutput } from "../utils/redaction.js";
 import { loadConfig } from "../config/index.js";
 import {
   getAuthInstance,
@@ -43,6 +44,6 @@ export function prewarmAuth(): void {
     // Non-fatal: bootstrap() will raise the real failure on first tool call.
     // Still log so missing config / broken credential injection does not vanish.
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[prewarmAuth] skipped: ${message}`);
+    console.error(`[prewarmAuth] skipped: ${redactOutput(message)}`);
   }
 }

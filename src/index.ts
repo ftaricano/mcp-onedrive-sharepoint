@@ -110,7 +110,10 @@ class McpOneDriveSharePointServer {
 
       return result;
     } catch (error) {
-      console.error(`Error in tool ${toolName}:`, error);
+      console.error(
+        createUserFriendlyError(`Error in tool ${toolName}:`),
+        createUserFriendlyError(error),
+      );
 
       // Return error in MCP format
       return toolErrorResponse(toolName, error);
@@ -132,7 +135,7 @@ class McpOneDriveSharePointServer {
       resetGraphClient();
       console.error("Server cleanup completed");
     } catch (error) {
-      console.error("Error during cleanup:", error);
+      console.error("Error during cleanup:", createUserFriendlyError(error));
     }
   }
 }
@@ -153,14 +156,14 @@ async function setupSignalHandlers(
 
   // Handle uncaught exceptions
   process.on("uncaughtException", async (error) => {
-    console.error("Uncaught exception:", error);
+    console.error("Uncaught exception:", createUserFriendlyError(error));
     await server.cleanup();
     process.exit(1);
   });
 
   // Handle unhandled promise rejections
-  process.on("unhandledRejection", async (reason, promise) => {
-    console.error("Unhandled rejection at:", promise, "reason:", reason);
+  process.on("unhandledRejection", async (reason) => {
+    console.error("Unhandled rejection:", createUserFriendlyError(reason));
     await server.cleanup();
     process.exit(1);
   });
@@ -177,7 +180,10 @@ async function main(): Promise<void> {
     // Start the server
     await server.start();
   } catch (error) {
-    console.error("Failed to start MCP OneDrive/SharePoint Server:", error);
+    console.error(
+      "Failed to start MCP OneDrive/SharePoint Server:",
+      createUserFriendlyError(error),
+    );
     process.exit(1);
   }
 }
@@ -193,7 +199,7 @@ export { McpOneDriveSharePointServer, isMainModule };
 // Run if this is the main module
 if (isMainModule(import.meta.url)) {
   main().catch((error) => {
-    console.error("Fatal error:", error);
+    console.error("Fatal error:", createUserFriendlyError(error));
     process.exit(1);
   });
 }

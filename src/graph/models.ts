@@ -65,6 +65,8 @@ export interface DriveItem {
   createdDateTime: string;
   lastModifiedDateTime: string;
   webUrl: string;
+  eTag?: string;
+  cTag?: string;
   downloadUrl?: string;
   "@microsoft.graph.downloadUrl"?: string;
   file?: {
