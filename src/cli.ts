@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { redactOutput, redactDiagnostic } from "./utils/redaction.js";
+
 /**
  * CLI adapter — exposes the same MCP tools as plain subcommands.
  * Usage:
@@ -54,7 +56,7 @@ async function main(): Promise<void> {
     const name = rest[0];
     const tool = registry.tools.find((t) => t.name === name);
     if (!tool) {
-      process.stderr.write(`Unknown tool: ${name}\n`);
+      process.stderr.write(`Unknown tool: ${redactDiagnostic(name)}\n`);
       process.exit(1);
     }
     process.stdout.write(JSON.stringify(tool.inputSchema, null, 2) + "\n");
@@ -68,7 +70,9 @@ async function main(): Promise<void> {
 
   const handler = registry.handlers[command];
   if (!handler) {
-    process.stderr.write(`Unknown tool: ${command}\nTry: ods list\n`);
+    process.stderr.write(
+      `Unknown tool: ${redactDiagnostic(command)}\nTry: ods list\n`,
+    );
     process.exit(1);
   }
 
@@ -79,7 +83,7 @@ async function main(): Promise<void> {
   const result = await handler(args);
 
   const text = extractText(result);
-  process.stdout.write(text + "\n");
+  process.stdout.write(redactOutput(text) + "\n");
 
   if ((result as { isError?: boolean } | undefined)?.isError) process.exit(2);
 }
