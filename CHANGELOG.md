@@ -62,6 +62,13 @@ and this project follows [Semantic Versioning](https://semver.org/).
   resulting tags but does not accept an expected eTag or enforce conditional upload;
   conditional upload remains a separate follow-up.
   Version tags identify the remote item; they are not a local content checksum.
+- `upload_file` / `UploadOptions.retryPolicy`: optional `default|single-attempt`
+  policy shared by CLI and MCP. `single-attempt` accepts files smaller than 4 MiB
+  in an existing destination folder, sends at most one simple PUT with no
+  redirects, and returns errors without retry, folder creation or upload sessions.
+  Invalid policies and sizes at or above 4 MiB fail before any Graph write.
+  Errors may follow an applied write; no rollback, CAS or exactly-once guarantee.
+  Omitted/default policy retains existing behavior, including large uploads.
 
 ### Changed
 

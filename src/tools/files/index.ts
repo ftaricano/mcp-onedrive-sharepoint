@@ -5,7 +5,11 @@
 
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { basename } from "node:path";
-import { getGraphClient } from "../../graph/client.js";
+import {
+  getGraphClient,
+  parseUploadRetryPolicy,
+  SINGLE_ATTEMPT_MAX_BYTES,
+} from "../../graph/client.js";
 import { DriveItem, Permission, GraphResponse } from "../../graph/models.js";
 import {
   extractPaginatedResult,
@@ -309,6 +313,12 @@ export const uploadFile: Tool = {
         type: "string",
         description: "Drive ID for a specific document library (optional)",
       },
+      retryPolicy: {
+        type: "string",
+        enum: ["default", "single-attempt"],
+        default: "default",
+        description: "Upload retry policy; single-attempt requires a file smaller than 4 MiB and an existing destination folder",
+      },
       conflictBehavior: {
         type: "string",
         enum: ["fail", "replace", "rename"],
@@ -322,18 +332,42 @@ export const uploadFile: Tool = {
 
 export async function handleUploadFile(args: any) {
   try {
+    const retryPolicy = parseUploadRetryPolicy(args.retryPolicy);
     const client = getGraphClient();
     const { localPath, remotePath, conflictBehavior = "rename" } = args;
+    // Validate before path preparation can create a folder or upload session.
+    let safeLocalPath: string | undefined;
+    if (retryPolicy === "single-attempt") {
+      safeLocalPath = resolveLocalPath(localPath, { mustExist: true });
+      const stats = await import("node:fs/promises").then((fs) => fs.stat(safeLocalPath!));
+      if (stats.size >= SINGLE_ATTEMPT_MAX_BYTES) {
+        throw new Error("single-attempt requires a file smaller than 4 MiB");
+      }
+    }
     const { siteId, driveId, resolvedSite } = await resolveFileDriveContext(
       args,
       client,
     );
 
     // Import path helper utilities
-    const { prepareUploadPath } = await import("../utils/path-helper.js");
+    const { prepareUploadPath, analyzePath } = await import("../utils/path-helper.js");
 
     // Prepare and sanitize the upload path
-    const pathPrep = await prepareUploadPath(remotePath, siteId, driveId);
+    // single-attempt requires existing folders: preparation must not add POSTs.
+    const sanitizedPath = retryPolicy === "single-attempt"
+      ? analyzePath(remotePath).sanitizedPath
+      : undefined;
+    const pathPrep = sanitizedPath !== undefined
+      ? {
+          success: true,
+          sanitizedPath,
+          originalPath: remotePath,
+          changes: sanitizedPath === remotePath.replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/")
+            ? []
+            : [`Path sanitized: "${remotePath}" → "${sanitizedPath}"`],
+          error: undefined,
+        }
+      : await prepareUploadPath(remotePath, siteId, driveId);
 
     if (!pathPrep.success) {
       return jsonTextErrorResponse({
@@ -350,7 +384,7 @@ export async function handleUploadFile(args: any) {
 
     const fileName = basename(pathPrep.sanitizedPath);
 
-    const safeLocalPath = resolveLocalPath(localPath, { mustExist: true });
+    safeLocalPath ??= resolveLocalPath(localPath, { mustExist: true });
 
     const response = await client.uploadFile(
       endpoint,
@@ -358,6 +392,7 @@ export async function handleUploadFile(args: any) {
       fileName,
       {
         conflictBehavior,
+        retryPolicy,
       },
     );
 

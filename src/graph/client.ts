@@ -28,7 +28,17 @@ export interface RequestOptions {
   validateStatus?: (status: number) => boolean;
 }
 
+export const SINGLE_ATTEMPT_MAX_BYTES = 4 * 1024 * 1024;
+export type UploadRetryPolicy = "default" | "single-attempt";
+
+export function parseUploadRetryPolicy(value: unknown): UploadRetryPolicy {
+  if (value === undefined) return "default";
+  if (value === "default" || value === "single-attempt") return value;
+  throw new Error('Invalid retryPolicy: expected "default" or "single-attempt"');
+}
+
 export interface UploadOptions extends RequestOptions {
+  retryPolicy?: UploadRetryPolicy;
   conflictBehavior?: "fail" | "replace" | "rename";
   onProgress?: (loaded: number, total: number) => void;
 }
@@ -302,45 +312,57 @@ export class GraphClient {
     fileName?: string,
     options: UploadOptions = {},
   ): Promise<McpResponse<any>> {
-    return this.executeWithRetry(
-      async () => {
-        const url = buildUrl(endpoint, {}, false);
-        const mimeType = lookup(filePath) || "application/octet-stream";
+    const singleAttempt = parseUploadRetryPolicy(options.retryPolicy) === "single-attempt";
+    const upload = async () => {
+      const url = buildUrl(endpoint, {}, false);
+      const mimeType = lookup(filePath) || "application/octet-stream";
 
-        // For small files (< 4MB), use simple upload
-        const stats = await import("fs").then((fs) =>
-          fs.promises.stat(filePath),
+      // For small files (< 4MB), use simple upload
+      const stats = await import("fs").then((fs) =>
+        fs.promises.stat(filePath),
+      );
+      if (singleAttempt && stats.size >= SINGLE_ATTEMPT_MAX_BYTES) {
+        throw new Error("single-attempt requires a file smaller than 4 MiB");
+      }
+      if (stats.size < SINGLE_ATTEMPT_MAX_BYTES) {
+        const fileBuffer = await import("fs").then((fs) =>
+          fs.promises.readFile(filePath),
         );
-        if (stats.size < 4 * 1024 * 1024) {
-          const fileBuffer = await import("fs").then((fs) =>
-            fs.promises.readFile(filePath),
-          );
 
-          const response = await this.axios.put(url, fileBuffer, {
-            headers: {
-              "Content-Type": mimeType,
-              ...options.headers,
-            },
-            timeout: options.timeout || 60000,
-            onUploadProgress: options.onProgress
-              ? (progress) => {
-                  options.onProgress!(
-                    progress.loaded,
-                    progress.total || stats.size,
-                  );
-                }
-              : undefined,
-          });
-
-          return this.wrapResponse(response.data, "onedrive");
-        } else {
-          // For large files, use resumable upload
-          return this.uploadLargeFile(endpoint, filePath, fileName, options);
+        if (singleAttempt && fileBuffer.length >= SINGLE_ATTEMPT_MAX_BYTES) {
+          throw new Error("single-attempt requires a file smaller than 4 MiB");
         }
-      },
-      `UPLOAD ${endpoint}`,
-      options.retries,
-    );
+        const response = await this.axios.put(url, fileBuffer, {
+          ...(singleAttempt ? {
+            maxRedirects: 0,
+            validateStatus: (status: number) => status >= 200 && status < 300,
+          } : {}),
+          headers: {
+            "Content-Type": mimeType,
+            ...options.headers,
+          },
+          timeout: options.timeout || 60000,
+          onUploadProgress: options.onProgress
+            ? (progress) => {
+                options.onProgress!(
+                  progress.loaded,
+                  progress.total || stats.size,
+                );
+              }
+            : undefined,
+        });
+
+        return this.wrapResponse(response.data, "onedrive");
+      } else {
+        // For large files, use resumable upload
+        return this.uploadLargeFile(endpoint, filePath, fileName, options);
+      }
+    };
+    // A failed write may already have taken effect. Return control without
+    // RetryHelper or follow-redirects replaying the body.
+    return singleAttempt
+      ? upload()
+      : this.executeWithRetry(upload, `UPLOAD ${endpoint}`, options.retries);
   }
 
   private async uploadLargeFile(
